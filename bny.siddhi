@@ -1,5 +1,5 @@
 @App:name("bny")
-@App:description("Restructure the MQ raw input ")
+@App:description("LOB MQ raw input ")
 
 -- MQ Raw Data Stream
 @sink(type='inMemory' , topic='LabledRawMessage') 
@@ -7,29 +7,30 @@ define stream LOBLabledEventStream (MQ_SRC_NM string, message string);
 
 define stream LOBRawEventStream(message string);
 
+define trigger ScheduledAlertCheckTrigger at every 15 min;
 
 --Table reads
 --Message NameSpace Table
 @store(type="rdbms", datasource="BNY_Oracle")
-define table   MQMSGRECNAMESPACE(CRT_TS string, MSG_REC_NM string, PUBL_NM string, TPC string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string,
-             SUB_TPC_5_CD string, RULE_IN string,NORULE_IN string, EMAIL_IN string, ALR_PRI_ID int, ALR_DESC_TX string, ALR_TY_DESC_TX string);
+define table   MQMSGRECNAMESPACE(CRT_TS string, MSG_REC_NM string, PUBL_NM string, TPC string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, RULE_IN string,NORULE_IN string, EMAIL_IN string, ALR_PRI_ID int, ALR_DESC_TX string, ALR_TY_DESC_TX string);
 
 --Email table
 @store(type="rdbms", datasource="BNY_Oracle")
 define table EMLT_EML_ADDR(CUST_ID string, CRT_TS string, UPDT_TS string, EACT_CD string, EML_ADDR string, ALR_ENBL_IN bool, FRMT_TY_CD string, HOLD_THRU_DT string, HOLD_STRT_DT string);
 
 
-
-
 --Table writes
 @store(type="rdbms", datasource="BNY_Oracle")
-define table AlertMessageBodyTable(ID string, body string);
+define table OUTPUT_TABLE(MSG_ID string, TPC string, CRT_TS string, MQ_SRC_NM string, ALR_TY_CD string, ACTN_STNG string);
 
 @store(type="rdbms", datasource="BNY_Oracle")
-define table ALERT_SUMMARY(ALERT_ID string, CUST_ID string, EACT_CD string, ML_ADDR string, CREATED_TIME string, ALR_CATG_CD string, ALR_TY_CD string, CONTENT_ID string);
+define table ALERT_MESSAGE_BODY_TABLE(MSG_ID string, TPC string, TEMPLATE_TYPE string, BODY string);
 
 @store(type="rdbms", datasource="BNY_Oracle")
-define table outputTable(RCD_ID string, CRT_TS string, ALR_TY_CD string, PUBL_NM string, TPC string, ACTN_STNG string);
+define table ALERT_SUMMARY(MSG_ID string, TPC string, TEMPLATE_TYPE string, CUST_ID string, EACT_CD string, EML_ADDR string, CREATED_TIME string);
+
+@store(type="rdbms", datasource="BNY_Oracle")
+define table SCHEDULED_ALERTS(MSG_ID string, TPC string, TEMPLATE_TYPE string, CUST_ID string, EACT_CD string, MQ_SRC_NM string, MSG_REC_NM string, CREATED_TIME string, SHEDULED_TIME string);
 
 
 --Alert Outputs
@@ -42,7 +43,6 @@ define stream emailOutStream ( email string, message string);
 define stream onscreenOutStream ( message string); 
 
 
-
 --Template the following, differs for every LOB 
 from LOBRawEventStream
 select "GLS" as MQ_SRC_NM, message
@@ -50,122 +50,187 @@ insert into LOBLabledEventStream;
 
 -- Query to identify the alert type
 from LOBLabledEventStream
-select message, str:concat("select MQDATASRCMAPFIELDS.FLD_NM, MQMSGRECORD.FLD_DATA_SIZE, MQDATASRCMAPFIELDS.MQ_SRC_NM, MQDATASRCMAPFIELDS.TARGET_REC from MQDATASRCMAPFIELDS, MQMSGRECORD where MQDATASRCMAPFIELDS.MQ_SRC_NM='",MQ_SRC_NM,"' and MQMSGRECORD.MSG_REC_NM = MQDATASRCMAPFIELDS.TARGET_REC and MQMSGRECORD.FLD_NM = MQDATASRCMAPFIELDS.FLD_NM AND ROWNUM = 1") as query1, MQ_SRC_NM
+select message, MQ_SRC_NM,  UUID() as MSG_ID, str:concat("select MQDATASRCMAPFIELDS.FLD_NM, MQMSGRECORD.FLD_DATA_SIZE, MQMSGRECORD.MSG_REC_NM from MQDATASRCMAPFIELDS, MQMSGRECORD where MQDATASRCMAPFIELDS.MQ_SRC_NM='",MQ_SRC_NM,"' and MQMSGRECORD.MSG_REC_NM = MQDATASRCMAPFIELDS.TARGET_REC and MQMSGRECORD.FLD_NM = MQDATASRCMAPFIELDS.FLD_NM AND ROWNUM = 1") as query1
 insert into TempStream1;
 
-from TempStream1#rdbms:query('BNY_Oracle', query1, 'FLD_NM string, FLD_DATA_SIZE int, MSG_REC_NM string, TARGET_REC string')
-select message, FLD_NM, FLD_DATA_SIZE, str:substr(message, 3, convert(FLD_DATA_SIZE, "int")) as TYPE, MQ_SRC_NM, MSG_REC_NM, TARGET_REC
+from TempStream1#rdbms:query('BNY_Oracle', query1, 'FLD_NM string, FLD_DATA_SIZE int, MSG_REC_NM string')
+select MSG_ID, message, MQ_SRC_NM, FLD_NM as TypeFieldName, FLD_DATA_SIZE as TypeFieldSize, MSG_REC_NM
 insert into TempStream2;
 
---Query to get the parsing info to restructure the MQ message
+
 from TempStream2
-    select message, str:concat("select MQMSGRECORD.FLD_NM, MQMSGRECORD.FLD_DATA_TYPE, MQMSGRECORD.FLD_DATA_SIZE, MQMSGRECORD.FLD_EXPAND_STR, MQMSGRECORD.FLD_COPY_STR, MQMSGRECORD.FLD_ORDER_NUM, MQDATASRCMAPFIELDS.MSG_REC_NM from MQDATASRCMAPFIELDS, MQMSGRECORD where MQDATASRCMAPFIELDS.FLD_VAL = '",TYPE, "' and MQMSGRECORD.MSG_REC_NM = MQDATASRCMAPFIELDS.TARGET_REC order by MQMSGRECORD.FLD_ORDER_NUM ASC") as query2, MQ_SRC_NM
-insert into TempStream3; 
+select MSG_ID, message, MQ_SRC_NM, MSG_REC_NM, TypeFieldName, TypeFieldSize, str:concat("select MQMSGRECORD.FLD_DATA_SIZE from MQMSGRECORD where MQMSGRECORD.MQ_SRC_NM = '",MQ_SRC_NM, "' AND MQMSGRECORD.MSG_REC_NM = '",MSG_REC_NM, "' AND MQMSGRECORD.FLD_ORDER_NUM = 1") as query2
+insert into TempStream3;
 
-from TempStream3#rdbms:query('BNY_Oracle', query2 , 'FLD_NM string, FLD_DATA_TYPE string, FLD_DATA_SIZE int, FLD_EXPAND_STR string, FLD_COPY_STR string, FLD_ORDER_NUM string, MSG_REC_NM string')#window.batch() 
-select message, bny:groupConcat(FLD_NM, FLD_DATA_TYPE, convert(FLD_DATA_SIZE,"string"), FLD_EXPAND_STR, FLD_COPY_STR ) as groupedKeys, MQ_SRC_NM, MSG_REC_NM, FLD_ORDER_NUM
-insert into TempStream4; 
+from TempStream3#rdbms:query('BNY_Oracle', query2, "FLD_DATA_SIZE int")
+select MSG_ID, message, MQ_SRC_NM, MSG_REC_NM, TypeFieldName, TypeFieldSize, convert(FLD_DATA_SIZE, "int") as LOBCharSize
+insert into TempStream4;
 
---Create a map containing the structred data in key value pairs
-from TempStream4
-select bny:createMap(message, groupedKeys) as properties, MQ_SRC_NM, MSG_REC_NM
+from TempStream4 
+select MSG_ID, message, MQ_SRC_NM, MSG_REC_NM, TypeFieldName,TypeFieldSize, str:substr(message, LOBCharSize, convert(TypeFieldSize, "int")) as TYPE
 insert into TempStream5;
 
+--Query to get the parsing info to restructure the MQ message
+from TempStream5
+    select MSG_ID, message, MQ_SRC_NM, str:concat("select MQMSGRECORD.FLD_NM, MQMSGRECORD.FLD_DATA_TYPE, MQMSGRECORD.FLD_DATA_SIZE, MQMSGRECORD.FLD_EXPAND_STR, MQMSGRECORD.FLD_COPY_STR, MQMSGRECORD.FLD_ORDER_NUM, MQDATASRCMAPFIELDS.MSG_REC_NM from MQDATASRCMAPFIELDS, MQMSGRECORD where MQDATASRCMAPFIELDS.FLD_VAL = '",TYPE, "' and MQMSGRECORD.MSG_REC_NM = MQDATASRCMAPFIELDS.TARGET_REC order by MQMSGRECORD.FLD_ORDER_NUM ASC") as query2
+insert into TempStream6; 
 
---Get other info from MQMSGRECNAMESPACE to poppulate the event
-from TempStream5 join MQMSGRECNAMESPACE
-on MQMSGRECNAMESPACE.PUBL_NM == TempStream5.MQ_SRC_NM AND MQMSGRECNAMESPACE.MSG_REC_NM == TempStream5.MSG_REC_NM
-select TempStream5.properties, TempStream5.MQ_SRC_NM, TempStream5.MSG_REC_NM, MQMSGRECNAMESPACE.TPC, MQMSGRECNAMESPACE.SUB_TPC as SUBTOPIC, MQMSGRECNAMESPACE.SUB_TPC_2_CD as SUBTOPIC1, MQMSGRECNAMESPACE.SUB_TPC_3_CD as SUBTOPIC2 ,MQMSGRECNAMESPACE.SUB_TPC_4_CD as SUBTOPIC3, MQMSGRECNAMESPACE.SUB_TPC_5_CD as SUBTOPIC4, MQMSGRECNAMESPACE.RULE_IN as Rule_Flag,  MQMSGRECNAMESPACE.NORULE_IN , MQMSGRECNAMESPACE.EMAIL_IN as Email_Flag 
-insert into TempStream6;
+from TempStream6#rdbms:query('BNY_Oracle', query2 , 'FLD_NM string, FLD_DATA_TYPE string, FLD_DATA_SIZE int, FLD_EXPAND_STR string, FLD_COPY_STR string, FLD_ORDER_NUM string, MSG_REC_NM string')#window.batch() 
+select MSG_ID, message, MQ_SRC_NM, bny:groupConcat(FLD_NM, FLD_DATA_TYPE, convert(FLD_DATA_SIZE,"string"), FLD_EXPAND_STR, FLD_COPY_STR ) as groupedKeys, FLD_ORDER_NUM, MSG_REC_NM 
+insert into TempStream7; 
 
---Populate the properties map with the data from the MQMSGRECNAMESPACE
-from TempStream6
-select bny:createMapFromRef(properties,SUBTOPIC, SUBTOPIC1, SUBTOPIC2, SUBTOPIC3, SUBTOPIC4, Rule_Flag, Email_Flag) as properties, MQ_SRC_NM, MSG_REC_NM, TPC, str:concat("AM_",MSG_REC_NM) as ALR_TY_CD, Rule_Flag
-insert into TempStream7;
-
---Check whether rules needs to be applied, if NO
-from TempStream7[Rule_Flag=="N"]
-select  properties, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, UUID() as ID
-insert into FilteredLOBEventStream;
-
---Check whether rules needs to be applied, if YES
-from TempStream7[Rule_Flag=="Y"]
-select  properties, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD
+--Create a map containing the structred data in key value pairs
+from TempStream7
+select MSG_ID, bny:createMap(message, groupedKeys) as properties, MQ_SRC_NM, MSG_REC_NM
 insert into TempStream8;
 
 
-
---Query Rule tables to get the expressions for specific alert type
-from TempStream8
-select str:concat("Select NRUT_RULE_MSTR.RULE_MSTR_ID as RULE_MSTR_ID, NEXT_EXPRS.VARL_NM as VARL_NM, NEXT_EXPRS.VARL_OPER_CD as VARL_OPER_CD, NEXT_EXPRS.VARL_VAL_TX as VARL_VAL_TX,NRDT_RULE_DTL.OPER_CD as OPER_CD, NEXT_EXPRS.VARL_TY_CD as VARL_TY_CD, NRDT_RULE_DTL.RULE_SEQ_NR from NRUT_RULE_MSTR,NEXT_EXPRS,NRDT_RULE_DTL where ALR_TY_CD='",ALR_TY_CD, "' AND NRUT_RULE_MSTR.RULE_MSTR_ID=NRDT_RULE_DTL.RULE_MSTR_ID AND NRDT_RULE_DTL.RULE_EXPRS_ID=NEXT_EXPRS.EXPRS_ID ORDER BY RULE_MSTR_ID") as query3, properties, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD
+--Get other info from MQMSGRECNAMESPACE to poppulate the event
+from TempStream8 join MQMSGRECNAMESPACE
+on MQMSGRECNAMESPACE.PUBL_NM == TempStream8.MQ_SRC_NM AND MQMSGRECNAMESPACE.MSG_REC_NM == TempStream8.MSG_REC_NM
+select TempStream8.MSG_ID, TempStream8.properties, TempStream8.MQ_SRC_NM, TempStream8.MSG_REC_NM, MQMSGRECNAMESPACE.TPC, MQMSGRECNAMESPACE.SUB_TPC as SUBTOPIC, MQMSGRECNAMESPACE.SUB_TPC_2_CD as SUBTOPIC1, MQMSGRECNAMESPACE.SUB_TPC_3_CD as SUBTOPIC2 ,MQMSGRECNAMESPACE.SUB_TPC_4_CD as SUBTOPIC3, MQMSGRECNAMESPACE.SUB_TPC_5_CD as SUBTOPIC4, MQMSGRECNAMESPACE.RULE_IN as Rule_Flag,  MQMSGRECNAMESPACE.NORULE_IN , MQMSGRECNAMESPACE.EMAIL_IN as Email_Flag 
 insert into TempStream9;
 
---Create the logical argument string from the Rule expressions 
-from TempStream9#rdbms:query('BNY_Oracle', query3, 'RULE_MSTR_ID string, VARL_NM string,VARL_OPER_CD string,VARL_VAL_TX string,OPER_CD string, VARL_TY_CD string, RULE_SEQ_NR string')#window.batch()
-select bny:createEvalStr(properties, RULE_MSTR_ID, VARL_NM, VARL_OPER_CD ,VARL_VAL_TX ,OPER_CD , VARL_TY_CD, RULE_SEQ_NR, true) as argString, properties, RULE_MSTR_ID, MQ_SRC_NM, RULE_SEQ_NR, MSG_REC_NM, TPC, ALR_TY_CD
-group by RULE_MSTR_ID
-insert into  TempStream10;
+--Populate the properties map with the data from the MQMSGRECNAMESPACE
+from TempStream9
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, bny:createMapFromRef(properties,SUBTOPIC, SUBTOPIC1, SUBTOPIC2, SUBTOPIC3, SUBTOPIC4, Rule_Flag, Email_Flag) as properties, TPC, str:concat("AM_",MSG_REC_NM) as ALR_TY_CD, Rule_Flag, SUBTOPIC as SUB_TPC, SUBTOPIC1 as SUB_TPC_2_CD, SUBTOPIC2 as SUB_TPC_3_CD, SUBTOPIC3 as SUB_TPC_4_CD, SUBTOPIC4 as SUB_TPC_5_CD
+insert into TempStream10;
 
---Evaluate the logical arguments string
-from TempStream10
-select bny:eval(argString) as eval, properties, RULE_MSTR_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, UUID() as ID
+--Check whether rules needs to be applied, if NO
+from TempStream10[Rule_Flag=="N"]
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, properties
+insert into OutputLOBEventStream;
+
+--Check whether rules needs to be applied, if YES
+from TempStream10[Rule_Flag=="Y"]
+select  MSG_ID, MQ_SRC_NM, MSG_REC_NM, properties, TPC, ALR_TY_CD
 insert into TempStream11;
 
---If the logical argument evaluation is True, 
-from TempStream11[eval == true]
-select map:put(properties, "TPC", RULE_MSTR_ID) as properties, MQ_SRC_NM, MSG_REC_NM, RULE_MSTR_ID as TPC, ALR_TY_CD, ID
-insert into FilteredLOBEventStream;
+--Query Rule tables to get the expressions for specific alert type
+from TempStream11
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, properties, TPC, ALR_TY_CD, str:concat("Select NRUT_RULE_MSTR.RULE_MSTR_ID as RULE_MSTR_ID, NEXT_EXPRS.VARL_NM as VARL_NM, NEXT_EXPRS.VARL_OPER_CD as VARL_OPER_CD, NEXT_EXPRS.VARL_VAL_TX as VARL_VAL_TX,NRDT_RULE_DTL.OPER_CD as OPER_CD, NEXT_EXPRS.VARL_TY_CD as VARL_TY_CD, NRDT_RULE_DTL.RULE_SEQ_NR from NRUT_RULE_MSTR,NEXT_EXPRS,NRDT_RULE_DTL where ALR_TY_CD='",ALR_TY_CD, "' AND NRUT_RULE_MSTR.RULE_MSTR_ID=NRDT_RULE_DTL.RULE_MSTR_ID AND NRDT_RULE_DTL.RULE_EXPRS_ID=NEXT_EXPRS.EXPRS_ID ORDER BY RULE_MSTR_ID") as query3
+insert into TempStream12;
 
---Persist the events to the OutputTable
-from FilteredLOBEventStream
-select ID as RCD_ID, time:currentTimestamp() as CRT_TS, ALR_TY_CD, MQ_SRC_NM as PUBL_NM, TPC, map:toJSON(properties) as ACTN_STNG
-insert into outputTable;
+--Create the logical argument string from the Rule expressions 
+from TempStream12#rdbms:query('BNY_Oracle', query3, 'RULE_MSTR_ID string, VARL_NM string,VARL_OPER_CD string,VARL_VAL_TX string,OPER_CD string, VARL_TY_CD string, RULE_SEQ_NR string')
+#window.batch()
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, properties, TPC, ALR_TY_CD, bny:createEvalStr(properties, RULE_MSTR_ID, VARL_NM, VARL_OPER_CD ,VARL_VAL_TX ,OPER_CD , VARL_TY_CD, RULE_SEQ_NR, true) as argString, RULE_MSTR_ID, RULE_SEQ_NR
+group by RULE_MSTR_ID
+insert into  TempStream13;
 
---Retrieve the email template for the specific alert type
-from FilteredLOBEventStream
-select str:concat("SELECT TPL_CD, TPL_TX FROM TPTT_TPL WHERE TPL_CD LIKE '",ALR_TY_CD,"%'") as query4, properties, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, ID
-insert into TempStream13;
-
-from TempStream13#rdbms:query('BNY_Oracle', query4, 'TPL_CD string, TPL_TX string')
-select TPL_CD, TPL_TX, properties, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, ID 
+--Evaluate the logical arguments string
+from TempStream13
+select MSG_ID,  MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, properties, RULE_MSTR_ID, bny:eval(argString) as eval
 insert into TempStream14;
 
-from TempStream14
-select bny:substitute(TPL_TX, properties) as populatedTemplate, properties, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, ID
-insert into TemplatedLOBEventStream;
+
+--If the logical argument evaluation is True, 
+from TempStream14[eval == true]
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, RULE_MSTR_ID as TPC, ALR_TY_CD, map:put(properties, "TPC", RULE_MSTR_ID) as properties
+insert into OutputLOBEventStream;
+
+--Persist the events to the OutputTable
+from OutputLOBEventStream
+select MSG_ID, TPC, time:currentTimestamp() as CRT_TS, MQ_SRC_NM, ALR_TY_CD, map:toJSON(properties) as ACTN_STNG
+insert into OUTPUT_TABLE;
+
+from OutputLOBEventStream
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, properties, cast(map:get(properties,"SUBTOPIC"), "string") as SUB_TPC, cast(map:get(properties,"SUBTOPIC1"), "string") as SUB_TPC_2_CD, cast(map:get(properties,"SUBTOPIC2"), "string") as SUB_TPC_3_CD, cast(map:get(properties,"SUBTOPIC3"),"string") as SUB_TPC_4_CD, cast(map:get(properties,"SUBTOPIC4"), "string") as SUB_TPC_5_CD
+insert into SubscriptionValidationStream;
+
+--Check whether even one subscription is avaialble, else drop alert
+from SubscriptionValidationStream
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, properties, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, str:concat("Select AEUT_ALR_USR.CUST_ID from AEUT_ALR_USR where AEUT_ALR_USR.TPC='",TPC, "' AND AEUT_ALR_USR.PUBL_NM='",MQ_SRC_NM, "' AND AEUT_ALR_USR.SUB_TPC='",SUB_TPC,"' AND AEUT_ALR_USR.SUB_TPC_2_CD='",SUB_TPC_2_CD,"' AND AEUT_ALR_USR.SUB_TPC_3_CD='",SUB_TPC_3_CD,"' AND AEUT_ALR_USR.SUB_TPC_4_CD='",SUB_TPC_4_CD,"' AND AEUT_ALR_USR.SUB_TPC_5_CD='",SUB_TPC_5_CD,"' AND ROWNUM = 1") as query6
+insert into TempStream15;
 
 
---Write to the AlertMessageBody Table the populated template
-from TemplatedLOBEventStream
-select ID, populatedTemplate as body
-insert into AlertMessageBodyTable;
+from TempStream15#rdbms:query('BNY_Oracle', query6, "CUST_ID string")
+select  MSG_ID, TPC, properties, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD
+insert into FilteredLOBEventStream;
 
 
-from TemplatedLOBEventStream
-select cast(map:get(properties,"SUBTOPIC"), "string") as SUB_TPC, cast(map:get(properties,"SUBTOPIC1"), "string") as SUB_TPC_2_CD, cast(map:get(properties,"SUBTOPIC2"), "string") as SUB_TPC_3_CD, cast(map:get(properties,"SUBTOPIC3"),"string") as SUB_TPC_4_CD, cast(map:get(properties,"SUBTOPIC4"), "string") as SUB_TPC_5_CD, map:toXML(properties, "AlertData") as ACTN_STNG, MSG_REC_NM, MQ_SRC_NM, TPC, properties, populatedTemplate, ALR_TY_CD, ID
+--Retrieve the templates for the specific alert type
+from FilteredLOBEventStream 
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM,  ALR_TY_CD, properties, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, str:concat("SELECT TPL_CD, TPL_TX FROM TPTT_TPL WHERE TPL_CD LIKE '",ALR_TY_CD,"%'") as query4
 insert into TempStream16;
 
-from TempStream16
-select str:concat("Select AEUT_ALR_USR.CUST_ID, EATT_LCTC_ADDR_MAP.EACT_CD, EATT_LCTC_ADDR_MAP.ALR_SUBSC_NM, EATT_LCTC_ADDR_MAP.ALR_CATG_CD  from AEUT_ALR_USR, EATT_LCTC_ADDR_MAP where AEUT_ALR_USR.TPC='",TPC,"' AND AEUT_ALR_USR.SUB_TPC='",SUB_TPC,"' AND AEUT_ALR_USR.CUST_ID=EATT_LCTC_ADDR_MAP.CUST_ID AND EATT_LCTC_ADDR_MAP.ALR_TY_CD=AEUT_ALR_USR.SUB_TPC") as query3, properties, MSG_REC_NM, MQ_SRC_NM, TPC, populatedTemplate, ALR_TY_CD, ID
+from TempStream16#rdbms:query('BNY_Oracle', query4, 'TPL_CD string, TPL_TX string')
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, properties, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, TPL_CD, TPL_TX
+insert into TempStream17;
+
+
+--seperate the template in to different categories
+from TempStream17#bny:populateTemplate(TPL_TX, properties, TPL_CD)
+select MSG_ID, TPC, properties, MQ_SRC_NM, MSG_REC_NM,  ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, populatedBody as BODY, publishType as TEMPLATE_TYPE
+insert into TemplatedLOBEventStream;
+
+--Persist message body to ALERT_MESSAGE_BODY_TABLE
+from TemplatedLOBEventStream
+select MSG_ID, TPC, TEMPLATE_TYPE, BODY 
+insert into ALERT_MESSAGE_BODY_TABLE;
+
+from TemplatedLOBEventStream
+select MSG_ID, TPC, TEMPLATE_TYPE, MSG_REC_NM, MQ_SRC_NM, ALR_TY_CD, properties,SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, BODY
+insert into TempStream18;
+
+from TempStream18
+select  MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, properties, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, BODY, str:concat("Select AEUT_ALR_USR.CUST_ID, EATT_LCTC_ADDR_MAP.EACT_CD, EATT_LCTC_ADDR_MAP.ALR_SUBSC_NM, EATT_LCTC_ADDR_MAP.ALR_CATG_CD, EATT_LCTC_ADDR_MAP.ALR_TY_ENBL_IN  from AEUT_ALR_USR, EATT_LCTC_ADDR_MAP where AEUT_ALR_USR.TPC='",TPC,"' AND AEUT_ALR_USR.SUB_TPC='",SUB_TPC,"' AND AEUT_ALR_USR.SUB_TPC_2_CD='",SUB_TPC_2_CD,"' AND AEUT_ALR_USR.SUB_TPC_3_CD='",SUB_TPC_3_CD,"' AND AEUT_ALR_USR.SUB_TPC_4_CD='",SUB_TPC_4_CD,"' AND AEUT_ALR_USR.SUB_TPC_5_CD='",SUB_TPC_5_CD,"' AND AEUT_ALR_USR.CUST_ID=EATT_LCTC_ADDR_MAP.CUST_ID AND EATT_LCTC_ADDR_MAP.ALR_TY_CD=AEUT_ALR_USR.SUB_TPC") as query3
 insert into TempStream19;
 
-from TempStream19#rdbms:query('BNY_Oracle', query3, 'CUST_ID string, EACT_CD string, ALR_SUBSC_NM string, ALR_CATG_CD string')
-select CUST_ID, EACT_CD, ALR_SUBSC_NM, ALR_CATG_CD, MSG_REC_NM, MQ_SRC_NM, TPC, populatedTemplate, ALR_TY_CD, ID
+from TempStream19#rdbms:query('BNY_Oracle', query3, 'CUST_ID string, EACT_CD string, ALR_TY_ENBL_IN string')
+select MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, BODY, CUST_ID, EACT_CD, true  as isRealTimeActive
+--convert(ALR_TY_ENBL_IN, "bool") as isRealTimeActive
 insert into  TempStream20;
 
-from TempStream20 join EMLT_EML_ADDR
-on TempStream20.CUST_ID == EMLT_EML_ADDR.CUST_ID AND TempStream20.EACT_CD == EMLT_EML_ADDR.EACT_CD
-select EMLT_EML_ADDR.EML_ADDR as outputType, EMLT_EML_ADDR.ALR_ENBL_IN, TempStream20.populatedTemplate as message, TempStream20.CUST_ID as CUST_ID, TempStream20.EACT_CD as EACT_CD,TempStream20.ALR_SUBSC_NM, TempStream20.ALR_CATG_CD, TempStream20.ALR_TY_CD, ID
-insert into TempStream21;
+--Check alert publishing stratedy
+--RealTime
+from TempStream20[isRealTimeActive]
+select MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, CUST_ID, EACT_CD, BODY
+insert into FilteredSubscriptionBasedLOBEventStream;
 
-from TempStream21[outputType != "ONSCREEN"]
-select outputType as email, message
+--Offline
+from TempStream20[not(isRealTimeActive)]
+select MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, BODY, CUST_ID, EACT_CD
+insert into SubscriptionBasedLOBEventStream;
+
+
+from FilteredSubscriptionBasedLOBEventStream join EMLT_EML_ADDR
+on FilteredSubscriptionBasedLOBEventStream.CUST_ID == EMLT_EML_ADDR.CUST_ID AND FilteredSubscriptionBasedLOBEventStream.EACT_CD == EMLT_EML_ADDR.EACT_CD
+select FilteredSubscriptionBasedLOBEventStream.MSG_ID, FilteredSubscriptionBasedLOBEventStream.TPC, FilteredSubscriptionBasedLOBEventStream.TEMPLATE_TYPE, EMLT_EML_ADDR.EML_ADDR,  EMLT_EML_ADDR.ALR_ENBL_IN as isPublishingActive, FilteredSubscriptionBasedLOBEventStream.BODY as message, FilteredSubscriptionBasedLOBEventStream.CUST_ID, FilteredSubscriptionBasedLOBEventStream.EACT_CD
+insert into OutBoundAlertStream;
+
+
+from OutBoundAlertStream[(TEMPLATE_TYPE == "EMAIL") AND (EACT_CD != "010") AND isPublishingActive]
+select EML_ADDR as email, message
 insert into emailOutStream;
 
-from TempStream21[outputType == "ONSCREEN"]
+--If OnScreen
+from OutBoundAlertStream[(TEMPLATE_TYPE == "CELL") AND (EACT_CD == "010") AND isPublishingActive]
 select message
 insert into onscreenOutStream;
 
-from TempStream21
-select UUID() as ALERT_ID, CUST_ID, EACT_CD, outputType as ML_ADDR, time:currentTimestamp() as CREATED_TIME, ALR_CATG_CD, ALR_TY_CD,  ID as CONTENT_ID
+from OutBoundAlertStream
+select MSG_ID, TPC, TEMPLATE_TYPE, CUST_ID, EACT_CD, EML_ADDR, time:currentTimestamp() as CREATED_TIME
 insert into ALERT_SUMMARY;
+
+from ScheduledAlertCheckTrigger#rdbms:query('BNY_Oracle', 'SELECT MSG_ID, TPC, TEMPLATE_TYPE, CUST_ID, EACT_CD, MQ_SRC_NM, MSG_REC_NM, CREATED_TIME, SHEDULED_TIME from SCHEDULED_ALERTS', 'MSG_ID string, TPC string, TEMPLATE_TYPE string, CUST_ID string, EACT_CD string, MQ_SRC_NM string, MSG_REC_NM string, CREATED_TIME string, SHEDULED_TIME string') 
+  select MSG_ID , TPC , TEMPLATE_TYPE , CUST_ID, EACT_CD, MQ_SRC_NM, MSG_REC_NM, CREATED_TIME , time:timestampInMilliseconds(SHEDULED_TIME,'yyyy-MM-dd HH:mm:ss') as time
+  insert into PendingAlertStream;
+  
+  
+from PendingAlertStream[time < currentTimeMillis()]
+select MSG_ID , TPC , TEMPLATE_TYPE , CUST_ID , EACT_CD, MQ_SRC_NM, MSG_REC_NM
+insert into FilteredPendingAlertStream;
+
+--Remove from the Pending Alert Table
+from FilteredPendingAlertStream
+delete SCHEDULED_ALERTS
+on SCHEDULED_ALERTS.MSG_ID == MSG_ID AND SCHEDULED_ALERTS.TPC == TPC AND SCHEDULED_ALERTS.TEMPLATE_TYPE == TEMPLATE_TYPE AND SCHEDULED_ALERTS.EACT_CD == EACT_CD;
+
+
+from FilteredPendingAlertStream join ALERT_MESSAGE_BODY_TABLE
+on FilteredPendingAlertStream.MSG_ID == ALERT_MESSAGE_BODY_TABLE.MSG_ID AND FilteredPendingAlertStream.TPC == ALERT_MESSAGE_BODY_TABLE.TPC AND FilteredPendingAlertStream.TEMPLATE_TYPE == ALERT_MESSAGE_BODY_TABLE.TEMPLATE_TYPE
+select FilteredPendingAlertStream.MSG_ID, FilteredPendingAlertStream.TPC, FilteredPendingAlertStream.TEMPLATE_TYPE, FilteredPendingAlertStream.MQ_SRC_NM, FilteredPendingAlertStream.MSG_REC_NM, CUST_ID, EACT_CD, ALERT_MESSAGE_BODY_TABLE.BODY
+insert into FilteredSubscriptionBasedLOBEventStream;
+
+
