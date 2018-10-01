@@ -30,7 +30,8 @@ select concatinatedtemplate, str:concat("SELECT DISTINCT CUST_ID, PRE_TIME, CNT_
                                  "FROM NUPT_USR_SUMM_TIME, NUPT_USR_SUMM_PREF ",
                                  "WHERE NUPT_USR_SUMM_PREF.CUST_ID = NUPT_USR_SUMM_TIME.CUST_ID ",
                                  "AND TO_CHAR(SUMM_TM, 'HH24:MI:SS') < TO_CHAR(NXT_PROC_TS, 'HH24:MI:SS') AND ",
-                                 "NXT_PROC_TS < current_timestamp AND TO_CHAR(NXT_PROC_TS, 'HH24:MI:SS') < TO_CHAR(current_timestamp, 'DD-MM-YY') ",
+                                 "NXT_PROC_TS < current_timestamp " ,
+                                 --"AND TO_CHAR(NXT_PROC_TS, 'HH24:MI:SS') < TO_CHAR(current_timestamp, 'DD-MM-YY') ",
                                "GROUP BY NUPT_USR_SUMM_PREF.CUST_ID) a, NUPT_USR_SUMM_PREF ",
             "WHERE NUPT_USR_SUMM_PREF.CUST_ID = a.CUST_ID ",
             "UNION ",
@@ -46,7 +47,7 @@ select concatinatedtemplate, str:concat("SELECT DISTINCT CUST_ID, PRE_TIME, CNT_
             "time_view, NUSA_USR_SUMM_ALR, ALERT_SUMMARY, OUTPUT_TABLE, TPTT_TPL ",
      "WHERE time_view.cust_id = NUSA_USR_SUMM_ALR.CUST_ID AND time_view.cust_id = ALERT_SUMMARY.CUST_ID ",
            "AND ALERT_SUMMARY.MSG_ID = OUTPUT_TABLE.MSG_ID AND ALERT_SUMMARY.TPC = OUTPUT_TABLE.TPC ",
-           "AND ALERT_SUMMARY.CREATED_TIME BETWEEN pre_time AND cnt_time ",
+     --      "AND ALERT_SUMMARY.CREATED_TIME BETWEEN pre_time AND cnt_time ",
            "AND TPTT_TPL.TPL_CD = CONCAT(CONCAT('BATCH.', ALERT_SUMMARY.ALR_TY_CD), '.EMAIL.HTML')) ",
      "a RIGHT OUTER JOIN NUSA_USR_SUMM_ALR b ",
      "ON b.cust_id = a.cust_id AND b.ALR_TY_CD = a.ALR_TY_CD ",
@@ -58,14 +59,20 @@ insert into TempStream1;
 
 --from TempStream1#log("###################################")
 --select query
---insert into temp1; SELECT DISTINCT CUST_ID, PRE_TIME, CNT_TIME, ALR_TY_CD, SummaryType, BatchTemplate, ActionString
+--insert into temp1;
  
 from TempStream1#rdbms:query('BNY_Oracle', query, 'CUST_ID string, PRE_TIME string, CNT_TIME string,  DIFF_TIME string, alertCategory string,summaryType string, batchTemplate string,actionString string')
 #window.batch()
-select CUST_ID, PRE_TIME, CNT_TIME, DIFF_TIME, alertCategory, summaryType, concatinatedtemplate, batchTemplate, actionString, bny:populateSummary(alertCategory, summaryType, concatinatedtemplate,  batchTemplate, actionString) as summary,  str: substr(concatinatedtemplate, "(BatchEmail_GroupSubj\?=\?)((.|\n)+?)\*=\*",2) as subjectString
+select CUST_ID, PRE_TIME, CNT_TIME, DIFF_TIME, alertCategory, summaryType, concatinatedtemplate, batchTemplate, actionString
+, bny:populateSummary(alertCategory, summaryType, concatinatedtemplate,  batchTemplate, actionString) as summary
+,  str: substr(concatinatedtemplate, "(BatchEmail_GroupSubj\?=\?)((.|\n)+?)\*=\*",2) as subjectString
 group by CUST_ID, summaryType
---, summaryType
 insert into TempStream2;
+
+--from TempStream2#log("####################################################################################################################################################")
+--select CUST_ID, alertCategory, summaryType, concatinatedtemplate,  batchTemplate, actionString
+--insert into TempStream4;
+
 
 from TempStream2
 select summary, str: replaceFirst(str: replaceFirst(str: replaceFirst(subjectString, "\$\*BatchIntervalText\^", DIFF_TIME), "\$\*StartQueryTime\^", PRE_TIME), 
@@ -74,6 +81,7 @@ insert into TempStream3;
 
 from TempStream3#log("####################################################################################################################################################")
 select summary
-insert into TempStream4;
+insert into TempStream5;
+
 
  
