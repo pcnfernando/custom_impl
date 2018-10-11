@@ -1,0 +1,109 @@
+@App:name("SummaryAlertGenerationApp")
+@App:description("Description of the plan")
+
+--Trigger to periodically check for summary alert generation
+--define trigger SummaryAlertCheckTrigger at every 60 min;
+define trigger SummaryAlertCheckTrigger at 'start';
+
+@store(type = "rdbms", datasource = "EAF_DEV_DB")
+define table NUPT_USR_SUMM_PREF(CUST_ID string, CRT_TS string, UPDT_TS string, NXT_PROC_TS object, ITVL_MMS_NR int, UPDT_USR_ID string, GRP_MAIL_IN string, PROC_STAT_CD string);
+
+--Publishes the summary alert through Email
+@sink(type='log', priority='DEBUG', prefix='Alert sentout as Email') 
+@async(buffer.size='128', workers='20') 
+define stream PublishEmailStream (emailAddress string, contentType string, content string); 
+
+from SummaryAlertCheckTrigger#rdbms:query('EAF_DEV_DB', str:concat("select TPL_TX as template from TPTT_TPL where TPL_CD='BATCH.GROUP.EMAIL.HTML' ", 
+"UNION select TPL_TX from (Select TPL_TX from TPDT_TPL_DTL where TPL_CD='BATCH.GROUP.EMAIL.HTML' order by ORD_NUM ASC)"), 'template string')#window.batch()
+ select str:groupConcat(template) as concatinatedtemplate
+ insert into templateStream;
+ 
+from templateStream
+select concatinatedtemplate, str:concat("SELECT DISTINCT CUST_ID, PRE_TIME, CNT_TIME, diff_time AS DIFF_TIME, ALR_TY_CD AS alertCategory , SummaryType AS summaryType, BatchTemplate AS batchTemplate, ActionString AS actionString, EmailAddress ",
+"FROM ( ",
+  "SELECT b.cust_id AS CUST_ID, pre_time AS PRE_TIME, cnt_time AS CNT_TIME, diff_time, b.ALR_TY_CD AS ALR_TY_CD, typ, c.GRP_MAIL_IN AS SummaryType, TPL_TX AS BatchTemplate, ACTN_STNG AS ActionString, EML_ADDR as EmailAddress ",
+  "FROM ( ",
+         "SELECT time_view.cust_id AS cust_id, pre_time, cnt_time, WSO2_SP_ALERT_SUMMARY.ALR_TY_CD, (cnt_time - pre_time) AS diff_time, typ, TPL_TX, WSO2_SP_OUTPUT_TABLE.ACTN_STNG, EMLT_EML_ADDR.EML_ADDR ",
+            "FROM ( ",
+                    "SELECT a.cust_id, to_timestamp(CONCAT(TO_CHAR(current_timestamp, 'DD-MM-YY'), CONCAT(' ', TO_CHAR(a.pre_time, 'HH24:MI:SS'))),'DD-MM-YY HH24:MI:SS') AS pre_time, ",
+                    "to_timestamp(CONCAT(TO_CHAR(current_timestamp, 'DD-MM-YY'), CONCAT(' ', TO_CHAR(NXT_PROC_TS, 'HH24:MI:SS'))),'DD-MM-YY HH24:MI:SS') AS cnt_time, ",
+                    "NUPT_USR_SUMM_PREF.GRP_MAIL_IN AS typ ",
+                         "FROM ( ",
+                               "SELECT NUPT_USR_SUMM_PREF.CUST_ID, MAX(SUMM_TM) AS pre_time ",
+                                 "FROM NUPT_USR_SUMM_TIME, NUPT_USR_SUMM_PREF ",
+                                 "WHERE NUPT_USR_SUMM_PREF.CUST_ID = NUPT_USR_SUMM_TIME.CUST_ID ",
+                                 "AND TO_CHAR(SUMM_TM, 'HH24:MI:SS') < TO_CHAR(NXT_PROC_TS, 'HH24:MI:SS') AND ",
+                                 "NXT_PROC_TS < current_timestamp " ,
+                               "GROUP BY NUPT_USR_SUMM_PREF.CUST_ID) a, NUPT_USR_SUMM_PREF ",
+            "WHERE NUPT_USR_SUMM_PREF.CUST_ID = a.CUST_ID ",
+            "UNION ",
+            "SELECT NUPT_USR_SUMM_PREF.CUST_ID AS cust_id, to_timestamp(CURRENT_DATE, 'DD-MM-YY') AS pre_time, ",
+                    "to_timestamp(CONCAT(TO_CHAR(current_timestamp, 'DD-MM-YY'), CONCAT(' ', TO_CHAR(NXT_PROC_TS, 'HH24:MI:SS'))),",
+                    "'DD-MM-YY HH24:MI:SS') AS cnt_time, NUPT_USR_SUMM_PREF.GRP_MAIL_IN AS typ ",
+            "FROM ( ",
+                    "SELECT MIN(SUMM_TM) AS SUMM_TM, CUST_ID ",
+                    "FROM NUPT_USR_SUMM_TIME ",
+                    "GROUP BY CUST_ID) times, NUPT_USR_SUMM_PREF ",
+            "WHERE NUPT_USR_SUMM_PREF.CUST_ID = times.CUST_ID AND TO_CHAR(NUPT_USR_SUMM_PREF.NXT_PROC_TS, 'HH24:MI:SS') = TO_CHAR(times.SUMM_TM, 'HH24:MI:SS') ",
+                   "AND NXT_PROC_TS < current_timestamp AND TO_CHAR(NXT_PROC_TS, 'HH24:MI:SS') < TO_CHAR(current_timestamp, 'DD-MM-YY')) ", 
+            "time_view, NUSA_USR_SUMM_ALR, WSO2_SP_ALERT_SUMMARY, WSO2_SP_OUTPUT_TABLE, TPTT_TPL, EMLT_EML_ADDR ",
+     "WHERE time_view.cust_id = NUSA_USR_SUMM_ALR.CUST_ID AND time_view.cust_id = WSO2_SP_ALERT_SUMMARY.CUST_ID ",
+           "AND WSO2_SP_ALERT_SUMMARY.MSG_ID = WSO2_SP_OUTPUT_TABLE.MSG_ID AND WSO2_SP_ALERT_SUMMARY.TPC = WSO2_SP_OUTPUT_TABLE.TPC ",
+           "AND WSO2_SP_ALERT_SUMMARY.CUST_ID = EMLT_EML_ADDR.CUST_ID ",
+            "AND NUSA_USR_SUMM_ALR.EACT_CD = EMLT_EML_ADDR.EACT_CD ",
+           "AND WSO2_SP_ALERT_SUMMARY.CREATED_TIME BETWEEN pre_time AND cnt_time ",
+           "AND TPTT_TPL.TPL_CD = CONCAT(CONCAT('BATCH.', WSO2_SP_ALERT_SUMMARY.ALR_TY_CD), '.EMAIL.HTML')) ",
+     "a RIGHT OUTER JOIN NUSA_USR_SUMM_ALR b ",
+     "ON b.cust_id = a.cust_id AND b.ALR_TY_CD = a.ALR_TY_CD ",
+     "RIGHT OUTER JOIN NUPT_USR_SUMM_PREF c ",
+     "ON b.CUST_ID = c.CUST_ID) ",
+     "WHERE cust_id IS NOT NULL and ActionString IS NOT NULL") as query
+insert into TempStream1; 
+
+from TempStream1#rdbms:query('EAF_DEV_DB', query, 'CUST_ID string, PRE_TIME string, CNT_TIME string,  DIFF_TIME string, alertCategory string, summaryType string, batchTemplate string, actionString string, EmailAddress string')
+#window.batch()
+select CUST_ID, PRE_TIME, CNT_TIME, DIFF_TIME, alertCategory, summaryType, concatinatedtemplate, batchTemplate, actionString, EmailAddress
+, bny:populateSummary(alertCategory, summaryType, concatinatedtemplate,  batchTemplate, actionString) as summary
+, str: substr(concatinatedtemplate, "(BatchEmail_GroupSubj\?=\?)((.|\n)+?)\*=\*",2) as subjectString
+group by CUST_ID, summaryType
+insert into TempStream2;
+
+from TempStream2
+select summary, str: replaceFirst(str: replaceFirst(str: replaceFirst(subjectString, "\$\*BatchIntervalText\^", DIFF_TIME), "\$\*StartQueryTime\^", PRE_TIME), 
+"\$\*EndQueryTime\^", CNT_TIME) as subject, EmailAddress
+insert into TempStream3;
+
+from TempStream3
+select str:substr(summary, '(?ms)(?!\A)^\S.*') as summary,  str:trim(str:substr(summary, 'Content-type:(.*)', 1)) as contentType, EmailAddress
+insert into TempStream4;
+
+from TempStream4
+select EmailAddress as emailAddress, contentType, summary as content
+insert into PublishEmailStream;
+
+from TempStream2#rdbms:query('EAF_DEV_DB', str:concat("select cust_id, ",
+"nxt_time from( ",
+"select NUPT_USR_SUMM_PREF.CUST_ID as cust_id ,to_timestamp(CONCAT(TO_CHAR (current_timestamp, 'DD-MM-YY'),CONCAT(' ',TO_CHAR (MIN(NUPT_USR_SUMM_TIME.SUMM_TM), 'HH24:MI:SS'))),'DD-MM-YY HH24:MI:SS') as nxt_time ",
+"from NUPT_USR_SUMM_TIME,NUPT_USR_SUMM_PREF  ",
+"where NUPT_USR_SUMM_PREF.CUST_ID = NUPT_USR_SUMM_TIME.CUST_ID AND TO_CHAR (SUMM_TM, 'HH24:MI:SS') > TO_CHAR (NXT_PROC_TS, 'HH24:MI:SS')  ",
+"AND NXT_PROC_TS < current_timestamp AND TO_CHAR (NXT_PROC_TS, 'DD-MM-YY') <= TO_CHAR (current_timestamp, 'DD-MM-YY') GROUP BY NUPT_USR_SUMM_PREF.CUST_ID ",
+"union  ",
+"select times.CUST_ID,to_timestamp(CONCAT(TO_CHAR (current_timestamp + 1, 'DD-MM-YY'),CONCAT(' ',TO_CHAR (nxt_time, 'HH24:MI:SS'))),'DD-MM-YY HH24:MI:SS') as nxt_time from  ",
+"(select MAX(SUMM_TM) as cnt_time, MIN(NUPT_USR_SUMM_TIME.SUMM_TM) as nxt_time, CUST_ID from NUPT_USR_SUMM_TIME group by CUST_ID) times,NUPT_USR_SUMM_PREF ",
+"where NUPT_USR_SUMM_PREF.CUST_ID = times.cust_id and TO_CHAR (NUPT_USR_SUMM_PREF.NXT_PROC_TS, 'HH24:MI:SS') = TO_CHAR (times.cnt_time, 'HH24:MI:SS') ",
+"AND NXT_PROC_TS < current_timestamp AND TO_CHAR (NXT_PROC_TS, 'DD-MM-YY') <= TO_CHAR (current_timestamp, 'DD-MM-YY') ",
+")"), 'cust_id string, nxt_time string') 
+select cust_id, nxt_time
+insert into TempStream5;
+
+from TempStream5#rdbms:cud('EAF_DEV_DB', "UPDATE NUPT_USR_SUMM_PREF SET NXT_PROC_TS=TO_DATE(?,'YYYY-MM-DD HH24:MI:SS') WHERE CUST_ID=?", nxt_time, cust_id)
+select numRecords
+insert into TempStream6;
+
+
+
+
+
+
+
+ 

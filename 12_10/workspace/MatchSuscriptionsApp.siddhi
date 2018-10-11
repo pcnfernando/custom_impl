@@ -1,0 +1,56 @@
+@App:name("MatchSuscriptionsApp")
+@App:description("Get subscriptions for the subscribed for the Alert")
+
+@source(type='inMemory' , topic='TemplatedLOBEventStream', @map(type='passThrough')) 
+@async(buffer.size='128', workers='20', batch.size.max='10') 
+define stream TemplatedLOBEventStream(MSG_ID string, TPC string, MQ_SRC_NM string, MSG_REC_NM string,  ALR_TY_CD string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, SUBJECT string, FROM_ADDR string, STRUCTURED_PROPERTY_MAP object, BODY string, TEMPLATE_TYPE string);
+
+@sink(type='log', priority='DEBUG', prefix='Matched with realtime alert subscriptions') 
+@sink(type='inMemory' , topic='FilteredSubscriptionBasedLOBEventStream', @map(type='passThrough')) 
+@async(buffer.size='128', workers='20', batch.size.max='10')
+define stream FilteredSubscriptionBasedLOBEventStream(MSG_ID string, TPC string, TEMPLATE_TYPE string, MQ_SRC_NM string, MSG_REC_NM string, CUST_ID string, ALR_TY_CD string, EACT_CD string, SUBJECT string, FROM_ADDR string, BODY string);
+
+@sink(type='log', priority='DEBUG', prefix='Matched with scheduled alert subscriptions') 
+@sink(type='inMemory' , topic='SubscriptionBasedLOBEventStream', @map(type='passThrough')) 
+define stream SubscriptionBasedLOBEventStream(MSG_ID string, TPC string, TEMPLATE_TYPE string, MQ_SRC_NM string, MSG_REC_NM string, SUBJECT string, FROM_ADDR string, BODY string, CUST_ID string, ALR_TY_CD string, EACT_CD string);
+
+@async(buffer.size='128', workers='20', batch.size.max='10') 
+define stream TempStream4(MSG_ID string, TPC string, TEMPLATE_TYPE string, MQ_SRC_NM string, MSG_REC_NM string, SUBJECT string, FROM_ADDR string, BODY string, CUST_ID string, ALR_TY_CD string, EACT_CD string, isRealTimeActive bool);
+
+from TemplatedLOBEventStream
+select MSG_ID, TPC, TEMPLATE_TYPE, MSG_REC_NM, MQ_SRC_NM, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, SUBJECT, FROM_ADDR, STRUCTURED_PROPERTY_MAP, BODY
+insert into TempStream1;
+
+from TempStream1
+select  MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, SUBJECT, FROM_ADDR, STRUCTURED_PROPERTY_MAP, BODY, str:concat("Select AEUT_ALR_USR.CUST_ID, EATT_LCTC_ADDR_MAP.EACT_CD, EATT_LCTC_ADDR_MAP.ALR_SUBSC_NM, EATT_LCTC_ADDR_MAP.ALR_CATG_CD, EATT_LCTC_ADDR_MAP.ALR_TY_ENBL_IN  from AEUT_ALR_USR, EATT_LCTC_ADDR_MAP where AEUT_ALR_USR.TPC='",TPC,"' AND AEUT_ALR_USR.SUB_TPC='",SUB_TPC,"' AND AEUT_ALR_USR.SUB_TPC_2_CD='",SUB_TPC_2_CD,"' AND AEUT_ALR_USR.SUB_TPC_3_CD='",SUB_TPC_3_CD,"' AND AEUT_ALR_USR.SUB_TPC_4_CD='",SUB_TPC_4_CD,"' AND AEUT_ALR_USR.SUB_TPC_5_CD='",SUB_TPC_5_CD,"' AND AEUT_ALR_USR.CUST_ID=EATT_LCTC_ADDR_MAP.CUST_ID AND EATT_LCTC_ADDR_MAP.ALR_TY_CD=AEUT_ALR_USR.SUB_TPC "
+,"AND EATT_LCTC_ADDR_MAP.ALR_SUBSC_NM=AEUT_ALR_USR.ALR_SUBSC_NM"
+) as baseQuery
+insert into TempStream2;
+
+FROM TempStream2
+select MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, SUBJECT, FROM_ADDR, BODY, ALR_TY_CD, ifThenElse(TEMPLATE_TYPE == 'CELL', str:concat(baseQuery, " AND (EATT_LCTC_ADDR_MAP.EACT_CD='004')"), str:concat(baseQuery, " AND (EATT_LCTC_ADDR_MAP.EACT_CD='006' OR EATT_LCTC_ADDR_MAP.EACT_CD >= '010')")) as publishStrategyQuery
+insert into TempStream3;
+
+from TempStream3#rdbms:query('EAF_DEV_DB', publishStrategyQuery, 'CUST_ID string, EACT_CD string, ALR_TY_ENBL_IN string')
+select MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, SUBJECT, FROM_ADDR, BODY, CUST_ID, ALR_TY_CD, EACT_CD, true  as isRealTimeActive
+insert into  TempStream4;
+
+--Check alert publishing stratedy
+--RealTime
+from TempStream4[isRealTimeActive]
+select MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, CUST_ID, ALR_TY_CD, EACT_CD, SUBJECT, FROM_ADDR, BODY
+insert into  TempStream5;
+
+from TempStream5
+select *
+insert into FilteredSubscriptionBasedLOBEventStream;
+
+--from TempStream5#log("Matched with realtime alert subscriptions")
+--select MSG_ID, ALR_TY_CD, TPC, CUST_ID, EACT_CD
+--insert into logStream;
+
+--Offline
+from TempStream4[not(isRealTimeActive)]
+select MSG_ID, TPC, TEMPLATE_TYPE, MQ_SRC_NM, MSG_REC_NM, SUBJECT, FROM_ADDR, BODY, CUST_ID, ALR_TY_CD, EACT_CD
+insert into SubscriptionBasedLOBEventStream;
+

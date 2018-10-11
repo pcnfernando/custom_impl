@@ -1,0 +1,134 @@
+@App:name("PublishAlertsApp")
+@App:description("Publishes alerts")
+
+--Email table
+@store(type="rdbms", datasource="EAF_DEV_DB")
+define table EMLT_EML_ADDR(CUST_ID string, CRT_TS string, UPDT_TS string, EACT_CD string, EML_ADDR string, ALR_ENBL_IN bool, FRMT_TY_CD string, HOLD_THRU_DT string, HOLD_STRT_DT string);
+
+@async(buffer.size='128', workers='20', batch.size.max='10')
+@source(type='inMemory' , topic='FilteredSubscriptionBasedLOBEventStream', @map(type='passThrough')) 
+define stream FilteredSubscriptionBasedLOBEventStream(MSG_ID string, TPC string, TEMPLATE_TYPE string, MQ_SRC_NM string, MSG_REC_NM string, CUST_ID string, ALR_TY_CD string, EACT_CD string, SUBJECT string, FROM_ADDR string, BODY string);
+
+--Alert Outputs
+@sink(type='log', priority='DEBUG', prefix='Alert sentout as Email') 
+--@sink(type='email', @map(type ='text', @payload("{{message}}")), subject="{{SUBJECT}}", to='{{emailAddress}}', content.type='{{contentType}}' ) 
+@async(buffer.size='128', workers='30', batch.size.max='10') 
+define stream PublishEmailStream (emailAddress string, contentType string,  SUBJECT string, FROM_ADDR string, message string); 
+
+@sink(type='log', priority='DEBUG', prefix='Alert sentout as SMS') 
+--@sink(type='email', @map(type ='text', @payload("{{message}}")), subject="{{SUBJECT}}", to='{{emailAddress}}', content.type='{{contentType}}' ) 
+--@async(buffer.size='128', workers='20', batch.size.max='10') 
+define stream PublishSMSStream(emailAddress string, contentType string, SUBJECT string, FROM_ADDR string, message string);
+
+@sink(type='log', priority='DEBUG', prefix='Alert sent out as OnScreen Notification') 
+define stream PublishOnScreenStream (message string); 
+
+@async(buffer.size='128', workers='30', batch.size.max='10') 
+define stream OutBoundAlertStream(MSG_ID string, TPC string, TEMPLATE_TYPE string, CUST_ID string, ALR_TY_CD string,EACT_CD string, emailAddress string, isPublishingActive bool, SUBJECT string, FROM_ADDR string, contentType string, message string);
+
+/*
+-------------------------------------------------------------------------------------------------------------------------
+--Start Entitlement Check PlaceHolder
+-------------------------------------------------------------------------------------------------------------------------
+
+@primaryKey('CUST_ID','MSG_ID', 'contentType', 'emailAddress') 
+define table ENTITLEMENT_CHECK_TABLE(ID string, CUST_ID string, MSG_ID string, SUBJECT string, FROM_ADDR string, EACT_CD string, emailAddress string, contentType string, message string);
+
+@sink(ref='EntitlementRequest', sink.id = 'EntitlementValidation', 
+method='GET', 
+@map(type='json'))
+define stream EntitlementRequest(ID string, CUST_ID string, emailAddress string);
+
+-- source to receive successful responses (which have 2xx status codes)
+@source(type = 'http-response', sink.id = 'EntitlementValidation', http.status.code='200', @map(type='json', 
+@attributes(valid='$.msg')))
+define stream EntitlementResponse (valid bool);
+
+-- source to receive the responses with 4xx status codes
+@source(type='http-response' , sink.id='EntitlementValidation', http.status.code='400' 
+,@map(type='text',fail.on.missing.attribute='true', regex.A='(.*)', @attributes(message = 'A[0]')))
+define stream responseStream4xx(message string);
+
+-------------------------------------------------------------------------------------------------------------------------
+--End Entitlement Check PlaceHolder
+-------------------------------------------------------------------------------------------------------------------------
+*/
+
+from FilteredSubscriptionBasedLOBEventStream join EMLT_EML_ADDR
+on FilteredSubscriptionBasedLOBEventStream.CUST_ID == EMLT_EML_ADDR.CUST_ID AND FilteredSubscriptionBasedLOBEventStream.EACT_CD == EMLT_EML_ADDR.EACT_CD
+select FilteredSubscriptionBasedLOBEventStream.MSG_ID, FilteredSubscriptionBasedLOBEventStream.TPC, FilteredSubscriptionBasedLOBEventStream.TEMPLATE_TYPE, EMLT_EML_ADDR.EML_ADDR,  EMLT_EML_ADDR.ALR_ENBL_IN as isPublishingActive, FilteredSubscriptionBasedLOBEventStream.SUBJECT, FilteredSubscriptionBasedLOBEventStream.FROM_ADDR, FilteredSubscriptionBasedLOBEventStream.BODY as message, FilteredSubscriptionBasedLOBEventStream.CUST_ID, FilteredSubscriptionBasedLOBEventStream.ALR_TY_CD,FilteredSubscriptionBasedLOBEventStream.EACT_CD
+insert into TempStream1;
+
+from TempStream1
+select MSG_ID, TPC, TEMPLATE_TYPE, CUST_ID, ALR_TY_CD, EACT_CD, EML_ADDR as emailAddress,  isPublishingActive, SUBJECT, FROM_ADDR, str:trim(str:substr(message, 'Content-type:(.*)', 1)) as contentType, str:substr(message, '(?ms)(?!\A)^\S.*') as message
+insert into OutBoundAlertStream;
+
+from OutBoundAlertStream[(TEMPLATE_TYPE == "EMAIL") AND isPublishingActive]
+select CUST_ID, MSG_ID, EACT_CD, SUBJECT, FROM_ADDR,  emailAddress, contentType, message
+insert into ValidatedStream;
+--insert into EntitlementCheckStream;
+
+/*
+-------------------------------------------------------------------------------------------------------------------------
+--Start Entitlement Check PlaceHolder
+-------------------------------------------------------------------------------------------------------------------------
+
+from EntitlementCheckStream
+--select UUID() as ID, CUST_ID, MSG_ID, message,  contentType, EML_ADDR as email
+select "abc123" as ID, CUST_ID, MSG_ID, SUBJECT, FROM_ADDR, EACT_CD, emailAddress, contentType, message
+insert into TempStream2;
+
+from TempStream2
+select ID, CUST_ID, MSG_ID, SUBJECT, FROM_ADDR, EACT_CD, emailAddress, contentType, message
+insert into ENTITLEMENT_CHECK_TABLE;
+
+from TempStream2
+select ID, CUST_ID, emailAddress
+insert into EntitlementRequest;
+
+from EntitlementResponse[valid  == true]
+select "abc123" as ID, valid
+insert into TempStream3;
+
+from TempStream3
+join ENTITLEMENT_CHECK_TABLE
+on TempStream3.ID == ENTITLEMENT_CHECK_TABLE.ID
+select ENTITLEMENT_CHECK_TABLE.ID, ENTITLEMENT_CHECK_TABLE.CUST_ID , ENTITLEMENT_CHECK_TABLE.MSG_ID, ENTITLEMENT_CHECK_TABLE.EACT_CD, ENTITLEMENT_CHECK_TABLE.SUBJECT, ENTITLEMENT_CHECK_TABLE.FROM_ADDR, ENTITLEMENT_CHECK_TABLE.emailAddress, ENTITLEMENT_CHECK_TABLE.contentType, ENTITLEMENT_CHECK_TABLE.message
+insert into ValidatedStream;
+
+from ValidatedStream
+delete ENTITLEMENT_CHECK_TABLE
+on ID == ENTITLEMENT_CHECK_TABLE.ID;
+
+-------------------------------------------------------------------------------------------------------------------------
+--End Entitlement Check PlaceHolder
+-------------------------------------------------------------------------------------------------------------------------
+*/
+
+from ValidatedStream[EACT_CD!='010']
+select emailAddress, contentType, str:concat(SUBJECT,"-WSO2 SP") as SUBJECT, FROM_ADDR, message
+insert into PublishEmailStream;
+
+--If OnScreen
+from ValidatedStream[EACT_CD=='010']
+select "OnScreen Alert" as message
+insert into PublishOnScreenStream;
+
+--If SMS
+from OutBoundAlertStream[(TEMPLATE_TYPE == "CELL") AND (EACT_CD == "004") AND isPublishingActive]
+select emailAddress, contentType, str:concat(SUBJECT,"-WSO2 SP") as SUBJECT, FROM_ADDR, message
+insert into PublishSMSStream;
+
+--Insert into AlertSummaryTable
+from OutBoundAlertStream
+select str:concat("INSERT INTO WSO2_SP_ALERT_SUMMARY VALUES ","('",MSG_ID,"' ,'",TPC,"' ,'",ifThenElse(EACT_CD!='010',TEMPLATE_TYPE, 'NULL'),"', '",CUST_ID,"', '",ALR_TY_CD,"', '",EACT_CD,"', '",emailAddress,"', TO_DATE('",time:currentTimestamp(),"','YYYY-MM-DD HH24:MI:SS'))") as query
+insert into TempStream5;
+
+from TempStream5#rdbms:cud('EAF_DEV_DB', query)
+insert into TempStream6;
+
+--from ValidatedStream#log("Alert was sentout")
+--select MSG_ID, CUST_ID, EACT_CD, emailAddress
+--insert into logStream;
+
+

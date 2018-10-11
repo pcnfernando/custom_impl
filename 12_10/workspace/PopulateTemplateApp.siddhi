@@ -1,0 +1,80 @@
+@App:name("PopulateTemplateApp")
+@App:description("Populating the templates for the specific alert types")
+
+--Trigers to populate the Cache tables parallely at startup
+define trigger ReadTemplatesTrigger at 'start';
+define trigger ReadTemplateAttributesTrigger at 'start';
+
+--Table Write
+@store(type="rdbms", datasource="EAF_DEV_DB")
+define table WSO2_SP_ALERT_MESSAGE_BODY(MSG_ID string, TPC string, TEMPLATE_TYPE string, SUBJECT string, FROM_ADDR string, BODY string);
+
+-- Cache tables
+@primaryKey('TPL_CD') 
+define table TemplateTable(TPL_CD string, TPL_TX string);
+
+@primaryKey('TPL_CT', 'TPL_ATTR_NM') 
+define table TemplateAttributesTable(TPL_CT string, TPL_ATTR_NM string, DEFL_ATTR_VAL_TX string);
+
+@source(type='inMemory' , topic='OutputLOBEventStream', @map(type='passThrough')) 
+@async(buffer.size='128', workers='20', batch.size.max='10') 
+define stream OutputLOBEventStream(MSG_ID string, MQ_SRC_NM string, MSG_REC_NM string, TPC string, ALR_TY_CD string, SUB_TPC string, SUB_TPC_2_CD string , SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, STRUCTURED_PROPERTY_MAP object);
+
+@sink(type='log', priority='DEBUG', prefix='Populated the template') 
+@sink(type='inMemory' , topic='TemplatedLOBEventStream', @map(type='passThrough')) 
+@async(buffer.size='128', workers='20', batch.size.max='10') 
+define stream TemplatedLOBEventStream(MSG_ID string, TPC string, MQ_SRC_NM string, MSG_REC_NM string,  ALR_TY_CD string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, SUBJECT string, FROM_ADDR string, STRUCTURED_PROPERTY_MAP object, BODY string, TEMPLATE_TYPE string);
+
+@async(buffer.size='128', workers='20', batch.size.max='10') 
+define stream TempStream2(MSG_ID string, TPC string, MQ_SRC_NM string, MSG_REC_NM string, ALR_TY_CD string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, STRUCTURED_PROPERTY_MAP object, TPL_CD string, TPL_TX string);
+
+from ReadTemplatesTrigger#rdbms:query('EAF_DEV_DB', 'SELECT TPL_CD, TPL_TX FROM TPTT_TPL', 'TPL_CD string, TPL_TX string')
+select TPL_CD, TPL_TX 
+insert into TemplateTable;
+
+from ReadTemplateAttributesTrigger#rdbms:query('EAF_DEV_DB', 'SELECT TPL_CD, TPL_ATTR_NM, DEFL_ATTR_VAL_TX from TPAT_TPL_ATTR', 'TPL_CD string, TPL_ATTR_NM string, DEFL_ATTR_VAL_TX string')
+select TPL_CD as TPL_CT, TPL_ATTR_NM, DEFL_ATTR_VAL_TX
+insert into TemplateAttributesTable;
+
+--Check whether even one subscription is avaialble, else drop alert
+from OutputLOBEventStream
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, STRUCTURED_PROPERTY_MAP, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, str:concat("Select AEUT_ALR_USR.CUST_ID from AEUT_ALR_USR where AEUT_ALR_USR.TPC='",TPC, "' AND AEUT_ALR_USR.PUBL_NM='",MQ_SRC_NM, "' AND AEUT_ALR_USR.SUB_TPC='",SUB_TPC,"' AND AEUT_ALR_USR.SUB_TPC_2_CD='",SUB_TPC_2_CD,"' AND AEUT_ALR_USR.SUB_TPC_3_CD='",SUB_TPC_3_CD,"' AND AEUT_ALR_USR.SUB_TPC_4_CD='",SUB_TPC_4_CD,"' AND AEUT_ALR_USR.SUB_TPC_5_CD='",SUB_TPC_5_CD,"' AND ROWNUM = 1") as query
+insert into TempStream1;
+
+from TempStream1#rdbms:query('EAF_DEV_DB', query, "CUST_ID string")
+select  MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP
+insert into FilteredLOBEventStream;
+
+--Retrieve the templates for the specific alert type
+from FilteredLOBEventStream join  TemplateTable
+on str:regexp(TemplateTable.TPL_CD, str:concat(FilteredLOBEventStream.ALR_TY_CD,".*"))
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP, TemplateTable.TPL_CD, TemplateTable.TPL_TX
+insert into TempStream2;
+
+--Seperate the template in to different categories
+from TempStream2#bny:populateTemplate(TPL_TX, STRUCTURED_PROPERTY_MAP, TPL_CD)
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM,  ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP, populatedBody as BODY, publishType as TEMPLATE_TYPE
+insert into TempStream3;
+
+from TempStream3#window.batch()
+join TemplateAttributesTable
+on str:regexp(TemplateAttributesTable.TPL_CT, str:concat(TempStream3.ALR_TY_CD,".",TEMPLATE_TYPE,".*"))
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP, BODY, TEMPLATE_TYPE, bny:createMapFromBatch(TPL_ATTR_NM, DEFL_ATTR_VAL_TX) as TEMPLATE_ATTR_MAP
+insert into TempStream4;
+
+from TempStream4
+select MSG_ID, TPC, MQ_SRC_NM, MSG_REC_NM, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, cast(map:get(TEMPLATE_ATTR_MAP, "Subj"), "string") as SUBJECT, cast(map:get(TEMPLATE_ATTR_MAP, "From"), "string") as FROM_ADDR, STRUCTURED_PROPERTY_MAP,  BODY, TEMPLATE_TYPE 
+insert into TempStream5;
+
+from TempStream5
+select *
+insert into TemplatedLOBEventStream;
+
+--from TempStream5#log("Populated the template")
+--select MSG_ID, ALR_TY_CD, TPC
+--insert into logStream;
+
+--Persist message body to ALERT_MESSAGE_BODY_TABLE
+from TempStream5
+select MSG_ID, TPC, TEMPLATE_TYPE, SUBJECT, FROM_ADDR, BODY 
+insert into WSO2_SP_ALERT_MESSAGE_BODY;

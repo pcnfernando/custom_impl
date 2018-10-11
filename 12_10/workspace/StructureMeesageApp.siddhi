@@ -1,0 +1,113 @@
+@App:name("StructureMeesageApp")
+@App:description("Structure the CoffeeBook format message string")
+
+--Trigers to populate the Cache tables parallely at startup
+define trigger LOBTypesReadTrigger at 'start';
+define trigger DataStructureTrigger at 'start';
+define trigger MQNameSpaceReadTrigger at 'start';
+
+--In-memory tables to cache the tables
+@primaryKey('MQ_SRC_NM','MSG_REC_NM','FLD_NM', 'FLD_VAL')
+define table LOBTypesTable(MQ_SRC_NM string, MSG_REC_NM string, FLD_NM string, FLD_VAL string);
+
+@primaryKey('MQ_SRC_NM', 'MSG_REC_NM', 'FLD_NM', 'FLD_ORDER_NUM')
+@index('MSG_REC_NM', 'FLD_NM') 
+define table DataStructureTable (MQ_SRC_NM string, MSG_REC_NM string, FLD_NM string, FLD_ORDER_NUM int, FLD_DATA_TYPE string, FLD_DATA_SIZE int, FLD_TYPE string, FLD_EXPAND_STR string, FLD_TRANS_STR string, FLD_COPY_STR string);
+
+@primaryKey('MSG_REC_NM') 
+define table MQNameSpaceTable (MSG_REC_NM string, PUBL_NM string, TPC string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, RULE_IN string,NORULE_IN string, EMAIL_IN string);
+
+
+--Consume message from ConsumptionApp
+@source(type='inMemory', topic='LabledRawMessage', @map(type='passThrough'))
+define stream LOBLabledEventStream (MQ_SRC_NM string, message string);
+
+--Pulish structured message for Rule Matching App
+@sink(type='log', priority='DEBUG', prefix='Raw message structured') 
+@sink(type='inMemory' , topic='StructuredLOBEvent', @map(type='passThrough')) 
+define stream StructuredLOBEventStream (MSG_ID string, MQ_SRC_NM string, MSG_REC_NM string, TPC string, ALR_TY_CD string, RULE_FLAG string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, STRUCTURED_PROPERTY_MAP object);
+
+--Populate the cache 
+from LOBTypesReadTrigger#rdbms:query('EAF_DEV_DB', 'SELECT MQ_SRC_NM, MSG_REC_NM, FLD_NM, FLD_VAL from MQDATASRCMAPFIELDS', 'MQ_SRC_NM string, MSG_REC_NM string, FLD_NM string, FLD_VAL string')
+select MQ_SRC_NM, MSG_REC_NM, FLD_NM, FLD_VAL
+insert into LOBTypesTable;
+
+--Caching process
+from DataStructureTrigger
+select str:concat("select DISTINCT MQMSGRECORD.MQ_SRC_NM, MQMSGRECORD.MSG_REC_NM, MQMSGRECORD.FLD_NM, FLD_ORDER_NUM, FLD_DATA_TYPE, MQMSGRECORD.FLD_DATA_SIZE, FLD_TYPE, FLD_EXPAND_STR, FLD_TRANS_STR, FLD_COPY_STR ",
+"from MQDATASRCMAPFIELDS FULL OUTER JOIN MQMSGRECORD ",
+"ON MQDATASRCMAPFIELDS.MQ_SRC_NM=MQMSGRECORD.MQ_SRC_NM and MQMSGRECORD.MSG_REC_NM = MQDATASRCMAPFIELDS.TARGET_REC and MQMSGRECORD.FLD_NM = MQDATASRCMAPFIELDS.FLD_NM order by MQMSGRECORD.FLD_ORDER_NUM ASC") as tableReadQuery
+insert into TableReadStream;
+
+from TableReadStream#rdbms:query('EAF_DEV_DB', tableReadQuery, 'MQ_SRC_NM string, MSG_REC_NM string, FLD_NM string, FLD_ORDER_NUM int, FLD_DATA_TYPE string, FLD_DATA_SIZE int, FLD_TYPE string, FLD_EXPAND_STR string, FLD_TRANS_STR string, FLD_COPY_STR string')
+select MQ_SRC_NM, MSG_REC_NM , FLD_NM , FLD_ORDER_NUM , FLD_DATA_TYPE , FLD_DATA_SIZE , FLD_TYPE, FLD_EXPAND_STR, FLD_TRANS_STR, FLD_COPY_STR
+insert into DataStructureTable;
+
+from MQNameSpaceReadTrigger#rdbms:query('EAF_DEV_DB','SELECT MSG_REC_NM, PUBL_NM, TPC, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, RULE_IN,NORULE_IN, EMAIL_IN from MQMSGRECNAMESPACE', 'MSG_REC_NM string, PUBL_NM string, TPC string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, RULE_IN string,NORULE_IN string, EMAIL_IN string')
+select MSG_REC_NM, PUBL_NM, TPC, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, RULE_IN,NORULE_IN, EMAIL_IN
+insert into MQNameSpaceTable;
+
+
+-- Query to identify the alert type
+from LOBLabledEventStream join LOBTypesTable
+on LOBLabledEventStream.MQ_SRC_NM == LOBTypesTable.MQ_SRC_NM
+select LOBLabledEventStream.MQ_SRC_NM, LOBLabledEventStream.message, LOBTypesTable.FLD_NM
+limit 1
+insert into TempStream1;
+
+from TempStream1 join DataStructureTable
+on DataStructureTable.MQ_SRC_NM == TempStream1.MQ_SRC_NM and DataStructureTable.FLD_NM == TempStream1.FLD_NM
+select TempStream1.message, TempStream1.MQ_SRC_NM,  UUID() as MSG_ID, DataStructureTable.FLD_NM as typeFieldName, DataStructureTable.FLD_DATA_SIZE as typeFieldSize, DataStructureTable.MSG_REC_NM
+limit 1
+insert into TempStream2;
+
+from TempStream2 join DataStructureTable
+on DataStructureTable.MQ_SRC_NM == TempStream2.MQ_SRC_NM AND DataStructureTable.MSG_REC_NM == TempStream2.MSG_REC_NM AND DataStructureTable.FLD_ORDER_NUM == 1
+select TempStream2.MSG_ID, TempStream2.message, TempStream2.MQ_SRC_NM, TempStream2.MSG_REC_NM, TempStream2.typeFieldName, TempStream2.typeFieldSize, 
+convert(DataStructureTable.FLD_DATA_SIZE, "int") as LOBCharSize
+insert into TempStream3;
+
+from TempStream3 
+select MSG_ID, message, MQ_SRC_NM, MSG_REC_NM, typeFieldName, typeFieldSize, str:substr(message, LOBCharSize, convert(typeFieldSize, "int")) as TYPE
+insert into TempStream4;
+
+--Query to get the parsing info to restructure the MQ message
+from TempStream4
+join LOBTypesTable
+on TempStream4.MQ_SRC_NM == LOBTypesTable.MQ_SRC_NM AND TempStream4.TYPE == LOBTypesTable.FLD_VAL
+select TempStream4.MSG_ID, TempStream4.message, TempStream4.MQ_SRC_NM, LOBTypesTable.MSG_REC_NM
+insert into TempStream5;
+
+from TempStream5#window.batch()
+join DataStructureTable
+on DataStructureTable.MSG_REC_NM == TempStream5.MSG_REC_NM AND  DataStructureTable.MQ_SRC_NM == TempStream5.MQ_SRC_NM
+select TempStream5.MSG_ID, TempStream5.message, TempStream5.MQ_SRC_NM, DataStructureTable.FLD_NM, DataStructureTable.FLD_DATA_TYPE, DataStructureTable.FLD_DATA_SIZE, DataStructureTable.FLD_EXPAND_STR, DataStructureTable.FLD_TRANS_STR, DataStructureTable.FLD_COPY_STR, DataStructureTable.FLD_ORDER_NUM, DataStructureTable.MSG_REC_NM, bny:groupConcat(FLD_ORDER_NUM, FLD_NM, FLD_DATA_TYPE, convert(FLD_DATA_SIZE,"string"), FLD_EXPAND_STR, FLD_COPY_STR ) as groupedKeys
+order by DataStructureTable.FLD_ORDER_NUM asc
+insert into TempStream6;
+
+--Create a map containing the structred data as key value pairs
+from TempStream6
+select MSG_ID, bny:createMap(message, groupedKeys) as propertiesMap, MQ_SRC_NM, MSG_REC_NM
+insert into TempStream7;
+
+--Get other required info from MQMSGRECNAMESPACE to poppulate the event
+from TempStream7 join MQNameSpaceTable
+on MQNameSpaceTable.PUBL_NM == TempStream7.MQ_SRC_NM AND MQNameSpaceTable.MSG_REC_NM == TempStream7.MSG_REC_NM
+select TempStream7.MSG_ID, TempStream7.propertiesMap, TempStream7.MQ_SRC_NM, TempStream7.MSG_REC_NM, MQNameSpaceTable.TPC, MQNameSpaceTable.SUB_TPC as SUBTOPIC, MQNameSpaceTable.SUB_TPC_2_CD as SUBTOPIC1, MQNameSpaceTable.SUB_TPC_3_CD as SUBTOPIC2 ,MQNameSpaceTable.SUB_TPC_4_CD as SUBTOPIC3, MQNameSpaceTable.SUB_TPC_5_CD as SUBTOPIC4, MQNameSpaceTable.RULE_IN as RULE_FLAG,  MQNameSpaceTable.NORULE_IN , MQNameSpaceTable.EMAIL_IN as EMAIL_FLAG 
+insert into TempStream8;
+
+--Populate the properties map with the data from the MQMSGRECNAMESPACE
+from TempStream8
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, str:concat("AM_",MSG_REC_NM) as ALR_TY_CD, RULE_FLAG, bny:createMapFromRef(propertiesMap,SUBTOPIC, SUBTOPIC1, SUBTOPIC2, SUBTOPIC3, SUBTOPIC4, RULE_FLAG, EMAIL_FLAG) as STRUCTURED_PROPERTY_MAP
+insert into TempStream9;
+
+from TempStream9
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, RULE_FLAG, cast(map:get(STRUCTURED_PROPERTY_MAP,"SUBTOPIC"), "string") as SUB_TPC, cast(map:get(STRUCTURED_PROPERTY_MAP,"SUBTOPIC1"), "string") as SUB_TPC_2_CD, cast(map:get(STRUCTURED_PROPERTY_MAP,"SUBTOPIC2"), "string") as SUB_TPC_3_CD, cast(map:get(STRUCTURED_PROPERTY_MAP,"SUBTOPIC3"),"string") as SUB_TPC_4_CD, cast(map:get(STRUCTURED_PROPERTY_MAP,"SUBTOPIC4"), "string") as SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP
+insert into TempStream10;
+
+--from TempStream10#log("Raw message structured")
+--select MSG_ID, STRUCTURED_PROPERTY_MAP
+--insert into logStream;
+
+from TempStream10 
+insert into StructuredLOBEventStream;

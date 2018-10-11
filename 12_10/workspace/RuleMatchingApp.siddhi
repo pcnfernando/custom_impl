@@ -1,0 +1,100 @@
+@App:name("RuleMatchingApp")
+@App:description("Match the rules if RuleFlag is said to true, else directly passthrough to OutputLOBEventStream")
+
+--Trigers to populate the Cache table at startup
+define trigger ReadMappingTrigger at 'start';
+
+--Table writes
+@store(type="rdbms", datasource="EAF_DEV_DB")
+define table WSO2_SP_OUTPUT_TABLE(MSG_ID string, TPC string, CRT_TS string, MQ_SRC_NM string, ALR_TY_CD string, ACTN_STNG string);
+
+define table RULEDATASRCPUBEXPR(DATA_SRC_NM string, VARL_NM string, DATA_TAG_NM string);
+
+@source(type='inMemory' , topic='StructuredLOBEvent', @map(type='passThrough')) 
+define stream StructuredLOBEventStream (MSG_ID string, MQ_SRC_NM string, MSG_REC_NM string, TPC string, ALR_TY_CD string, RULE_FLAG string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, STRUCTURED_PROPERTY_MAP object);
+
+@sink(type='log', priority='DEBUG', prefix='Passed from Rule Matching Phase') 
+@sink(type='inMemory' , topic='OutputLOBEventStream', @map(type='passThrough')) 
+@async(buffer.size='128', workers='20', batch.size.max='10') 
+define stream OutputLOBEventStream(MSG_ID string, MQ_SRC_NM string, MSG_REC_NM string, TPC string, ALR_TY_CD string, SUB_TPC string, SUB_TPC_2_CD string , SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, STRUCTURED_PROPERTY_MAP object);
+
+@async(buffer.size='128', workers='30', batch.size.max='10') 
+define stream TempStream4 (MSG_ID string, MQ_SRC_NM string, MSG_REC_NM string, TPC string, ALR_TY_CD string, SUB_TPC string, SUB_TPC_2_CD string, SUB_TPC_3_CD string, SUB_TPC_4_CD string, SUB_TPC_5_CD string, STRUCTURED_PROPERTY_MAP object, EVAL_STRING_MAP string, RULE_MSTR_ID string, RULE_SEQ_NR string);
+
+/*
+--Placeholder for JSON message integration
+
+@source(type='inMemory' , topic='JSONLOBEvent', @map(type='passThrough')) 
+define stream JSON_Messsage_Stream(MQ_SRC_NM string, JsonString string);
+
+from JSON_Messsage_Stream
+select UUID() as MSG_ID, MQ_SRC_NM, map:createFromJSON(JsonString) as STRUCTURED_PROPERTY_MAP
+insert into JsonTempStream1;
+
+from JsonTempStream1
+select MSG_ID, MQ_SRC_NM, cast(map:get(STRUCTURED_PROPERTY_MAP, "MSG_REC_NM"), "string") as MSG_REC_NM, cast(map:get(STRUCTURED_PROPERTY_MAP, "TPC"), "string") as TPC, 
+cast(map:get(STRUCTURED_PROPERTY_MAP, "ALR_TY_CD"), "string") as ALR_TY_CD, cast(map:get(STRUCTURED_PROPERTY_MAP, "RULE_FLAG"), "string") as RULE_FLAG, 
+cast(map:get(STRUCTURED_PROPERTY_MAP, "SUB_TPC"), "string") as SUB_TPC, cast(map:get(STRUCTURED_PROPERTY_MAP, "SUB_TPC_2_CD"), "string") as SUB_TPC_2_CD, 
+cast(map:get(STRUCTURED_PROPERTY_MAP, "SUB_TPC_3_CD"), "string") as SUB_TPC_3_CD, cast(map:get(STRUCTURED_PROPERTY_MAP, "SUB_TPC_4_CD"), "string") as SUB_TPC_4_CD, 
+cast(map:get(STRUCTURED_PROPERTY_MAP, "SUB_TPC_5_CD"), "string") as SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP
+insert into StructuredLOBEventStream;
+*/
+
+from ReadMappingTrigger#rdbms:query('EAF_DEV_DB','select DATA_SRC_NM, VARL_NM, DATA_TAG_NM from RULEDATASRCPUBEXPR', 'DATA_SRC_NM string, VARL_NM string, DATA_TAG_NM string')
+select DATA_SRC_NM, VARL_NM, DATA_TAG_NM
+insert into RULEDATASRCPUBEXPR;
+
+--Check whether rules needs to be applied, if NO directly add data to OutputLOBEventStream
+from StructuredLOBEventStream[RULE_FLAG =="N"]
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP
+insert into OutputLOBEventStream;
+
+--Check whether rules needs to be applied, if YES go through the rule matching process, and if matched add to OutputLOBEventStream
+from StructuredLOBEventStream[RULE_FLAG=="Y"]
+select  MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP
+insert into TempStream1;
+
+from TempStream1#window.batch()
+join RULEDATASRCPUBEXPR
+on str:regexp(RULEDATASRCPUBEXPR.DATA_SRC_NM, str:concat(TempStream1.MQ_SRC_NM,".*"))
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP, bny:createMapFromBatch(VARL_NM, DATA_TAG_NM) as PROPERTY_MAPPING
+insert into TempStream2;
+
+--Query Rule tables to get the expressions for specific alert type
+from TempStream2
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP, PROPERTY_MAPPING, str:concat("Select NRUT_RULE_MSTR.RULE_MSTR_ID as RULE_MSTR_ID, NEXT_EXPRS.VARL_NM as VARL_NM, NEXT_EXPRS.VARL_OPER_CD as VARL_OPER_CD, NEXT_EXPRS.VARL_VAL_TX as VARL_VAL_TX,NRDT_RULE_DTL.OPER_CD as OPER_CD, NEXT_EXPRS.VARL_TY_CD as VARL_TY_CD, NRDT_RULE_DTL.RULE_SEQ_NR from NRUT_RULE_MSTR,NEXT_EXPRS,NRDT_RULE_DTL where ALR_TY_CD='",ALR_TY_CD, "' AND NRUT_RULE_MSTR.RULE_MSTR_ID=NRDT_RULE_DTL.RULE_MSTR_ID AND NRDT_RULE_DTL.RULE_EXPRS_ID=NEXT_EXPRS.EXPRS_ID ORDER BY RULE_MSTR_ID") as query1
+insert into TempStream3;
+
+--Create the logical argument string from the Rule expressions 
+from TempStream3#rdbms:query('EAF_DEV_DB', query1, 'RULE_MSTR_ID string, VARL_NM string,VARL_OPER_CD string,VARL_VAL_TX string,OPER_CD string, VARL_TY_CD string, RULE_SEQ_NR string')
+#window.batch()
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP, bny:createEvalStr(PROPERTY_MAPPING, STRUCTURED_PROPERTY_MAP, RULE_MSTR_ID, VARL_NM, VARL_OPER_CD ,VARL_VAL_TX ,OPER_CD , VARL_TY_CD, RULE_SEQ_NR) as EVAL_STRING_MAP, RULE_MSTR_ID, RULE_SEQ_NR
+group by RULE_MSTR_ID
+insert into  TempStream4;
+
+from TempStream4
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, STRUCTURED_PROPERTY_MAP, map:get(EVAL_STRING_MAP, "populated") as POPULATED_EVAL_STR, map:get(EVAL_STRING_MAP, "unpopulated") as NOTPOPULATED_EVAL_STR, RULE_MSTR_ID, RULE_SEQ_NR
+insert into TempStream6;
+
+--Evaluate the logical arguments string
+from TempStream6#bny:eval(POPULATED_EVAL_STR, NOTPOPULATED_EVAL_STR)
+select MSG_ID,  MQ_SRC_NM, MSG_REC_NM, TPC, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, map:put(STRUCTURED_PROPERTY_MAP, "RULEVALUE", matchedCondition) as STRUCTURED_PROPERTY_MAP, RULE_MSTR_ID, evalResult
+insert into TempStream7;
+
+--If the logical argument evaluation is True, 
+from TempStream7[evalResult == true]
+select MSG_ID, MQ_SRC_NM, MSG_REC_NM, RULE_MSTR_ID as TPC, ALR_TY_CD, SUB_TPC, SUB_TPC_2_CD, SUB_TPC_3_CD, SUB_TPC_4_CD, SUB_TPC_5_CD, map:put(STRUCTURED_PROPERTY_MAP, "TPC", RULE_MSTR_ID) as STRUCTURED_PROPERTY_MAP
+insert into TempStream8;
+
+from TempStream8
+select *
+insert into OutputLOBEventStream;
+
+--from TempStream8#log("Rules Matched")
+--select MSG_ID, ALR_TY_CD, TPC
+--insert into logStream;
+
+--Persist the events to the OutputTable
+from TempStream8
+select MSG_ID, TPC, time:currentTimestamp() as CRT_TS, MQ_SRC_NM, ALR_TY_CD, map:toJSON(STRUCTURED_PROPERTY_MAP) as ACTN_STNG
+insert into WSO2_SP_OUTPUT_TABLE;

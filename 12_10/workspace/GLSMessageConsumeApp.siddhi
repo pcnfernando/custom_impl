@@ -1,0 +1,36 @@
+@App:name("GLSMessageConsumeApp")
+@App:description("Message consumption App from IBMMQ queue")
+
+/*
+@source(type='ibmmq',
+        destination.name='ECS.MFD.MFD2ECS_ICE_SND',
+        host='RSOMDAVECS04',
+        port='1418',
+        channel='LQDH.ECS.MFD',
+        queue.manager = 'LQDH',
+        worker.count = '1',
+        @map(type='text',fail.on.missing.attribute='true', regex.A='(.*)', @attributes(message = 'A[0]'))) */
+define stream LOBRawEventStream(message string);
+
+-- MQ Raw Data Stream
+@sink(type='log', priority='INFO', prefix='Consumed Message') 
+@sink(type='inMemory' , topic='LabledRawMessage', @map(type='passThrough')) 
+define stream LOBLabledEventStream (MQ_SRC_NM string, message string);
+
+/*
+--Placehoder for Json Message
+@sink(type='inMemory' , topic='JSONLOBEvent', @map(type='passThrough')) 
+define stream JSON_Messsage_Stream(MQ_SRC_NM string, JsonString string);
+
+from LOBRawEventStream
+select "GLS" as MQ_SRC_NM, message as JsonString
+insert into JSON_Messsage_Stream;
+*/
+
+from LOBRawEventStream
+select "GLS" as MQ_SRC_NM, message
+insert into LOBLabledEventStream;
+
+--from LOBLabledEventStream#log("Message Consumed")
+--select message
+--insert into logStream;

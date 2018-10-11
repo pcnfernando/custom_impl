@@ -1,0 +1,33 @@
+@App:name("ScheduledAlertApp")
+@App:description("Scheduled alert publishing app")
+
+--Trigger to periodically check for summary alert generation
+define trigger ScheduledAlertCheckTrigger at every 60 min;
+
+@store(type="rdbms", datasource="EAF_DEV_DB")
+define table WSO2_SP_SCHEDULED_ALERTS(MSG_ID string, TPC string, TEMPLATE_TYPE string, CUST_ID string, ALR_TY_CD string, EACT_CD string, MQ_SRC_NM string, MSG_REC_NM string, CREATED_TIME string, SHEDULED_TIME string);
+
+@store(type="rdbms", datasource="EAF_DEV_DB")
+define table WSO2_SP_ALERT_MESSAGE_BODY(MSG_ID string, TPC string, TEMPLATE_TYPE string, SUBJECT string, FROM_ADDR string, BODY string);
+
+@async(buffer.size='128', workers='20', batch.size.max='10')
+@source(type='inMemory' , topic='FilteredSubscriptionBasedLOBEventStream', @map(type='passThrough')) 
+define stream FilteredSubscriptionBasedLOBEventStream(MSG_ID string, TPC string, TEMPLATE_TYPE string, MQ_SRC_NM string, MSG_REC_NM string, CUST_ID string, ALR_TY_CD string, EACT_CD string, SUBJECT string, FROM_ADDR string, BODY string);
+
+from ScheduledAlertCheckTrigger#rdbms:query('EAF_DEV_DB', 'SELECT MSG_ID, TPC, TEMPLATE_TYPE, CUST_ID, ALR_TY_CD, EACT_CD, MQ_SRC_NM, MSG_REC_NM, CREATED_TIME, SHEDULED_TIME from SCHEDULED_ALERTS', 'MSG_ID string, TPC string, TEMPLATE_TYPE string, CUST_ID string, ALR_TY_CD string, EACT_CD string, MQ_SRC_NM string, MSG_REC_NM string, CREATED_TIME string, SHEDULED_TIME string') 
+  select MSG_ID , TPC , TEMPLATE_TYPE , CUST_ID, ALR_TY_CD, EACT_CD, MQ_SRC_NM, MSG_REC_NM, CREATED_TIME , time:timestampInMilliseconds(SHEDULED_TIME,'yyyy-MM-dd HH:mm:ss') as time
+  insert into PendingAlertStream;
+  
+from PendingAlertStream[time < currentTimeMillis()]
+select MSG_ID , TPC , TEMPLATE_TYPE , CUST_ID , ALR_TY_CD, EACT_CD, MQ_SRC_NM, MSG_REC_NM
+insert into FilteredPendingAlertStream;
+
+--Remove from the Pending Alert Table
+from FilteredPendingAlertStream
+delete WSO2_SP_SCHEDULED_ALERTS
+on WSO2_SP_SCHEDULED_ALERTS.MSG_ID == MSG_ID AND WSO2_SP_SCHEDULED_ALERTS.TPC == TPC AND WSO2_SP_SCHEDULED_ALERTS.TEMPLATE_TYPE == TEMPLATE_TYPE AND WSO2_SP_SCHEDULED_ALERTS.EACT_CD == EACT_CD;
+
+from FilteredPendingAlertStream join WSO2_SP_ALERT_MESSAGE_BODY
+on FilteredPendingAlertStream.MSG_ID == WSO2_SP_ALERT_MESSAGE_BODY.MSG_ID AND FilteredPendingAlertStream.TPC == WSO2_SP_ALERT_MESSAGE_BODY.TPC AND FilteredPendingAlertStream.TEMPLATE_TYPE == WSO2_SP_ALERT_MESSAGE_BODY.TEMPLATE_TYPE
+select FilteredPendingAlertStream.MSG_ID, FilteredPendingAlertStream.TPC, FilteredPendingAlertStream.TEMPLATE_TYPE, FilteredPendingAlertStream.MQ_SRC_NM, FilteredPendingAlertStream.MSG_REC_NM, CUST_ID, ALR_TY_CD, EACT_CD, WSO2_SP_ALERT_MESSAGE_BODY.SUBJECT, WSO2_SP_ALERT_MESSAGE_BODY.FROM_ADDR, WSO2_SP_ALERT_MESSAGE_BODY.BODY
+insert into FilteredSubscriptionBasedLOBEventStream;
