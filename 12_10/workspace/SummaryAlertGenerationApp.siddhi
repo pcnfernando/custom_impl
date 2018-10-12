@@ -9,7 +9,7 @@ define trigger SummaryAlertCheckTrigger at 'start';
 define table NUPT_USR_SUMM_PREF(CUST_ID string, CRT_TS string, UPDT_TS string, NXT_PROC_TS object, ITVL_MMS_NR int, UPDT_USR_ID string, GRP_MAIL_IN string, PROC_STAT_CD string);
 
 --Publishes the summary alert through Email
-@sink(type='log', priority='DEBUG', prefix='Alert sentout as Email') 
+@sink(type='log', priority='debug', prefix='Alert sentout as Email') 
 @async(buffer.size='128', workers='20') 
 define stream PublishEmailStream (emailAddress string, contentType string, content string); 
 
@@ -21,7 +21,12 @@ from SummaryAlertCheckTrigger#rdbms:query('EAF_DEV_DB', str:concat("select TPL_T
 from templateStream
 select concatinatedtemplate, str:concat("SELECT DISTINCT CUST_ID, PRE_TIME, CNT_TIME, diff_time AS DIFF_TIME, ALR_TY_CD AS alertCategory , SummaryType AS summaryType, BatchTemplate AS batchTemplate, ActionString AS actionString, EmailAddress ",
 "FROM ( ",
-  "SELECT b.cust_id AS CUST_ID, pre_time AS PRE_TIME, cnt_time AS CNT_TIME, diff_time, b.ALR_TY_CD AS ALR_TY_CD, typ, c.GRP_MAIL_IN AS SummaryType, TPL_TX AS BatchTemplate, ACTN_STNG AS ActionString, EML_ADDR as EmailAddress ",
+  "SELECT b.cust_id AS CUST_ID, ",
+  "concat(concat(concat(CONCAT(SUBSTR(to_char(pre_time, 'Month'), 1, 3), CONCAT(' ',to_char(pre_time, 'dd'))), CONCAT(', ', to_char(pre_time, 'yyyy'))), concat(' ',to_char(pre_time, 'hh:mi PM'))), ' ET')",
+  " AS PRE_TIME, ",
+  "concat(concat(concat(CONCAT(SUBSTR(to_char(cnt_time, 'Month'), 1, 3), CONCAT(' ',to_char(cnt_time, 'dd'))), CONCAT(', ', to_char(cnt_time, 'yyyy'))), concat(' ',to_char(cnt_time, 'hh:mi PM'))), ' ET')",
+  " AS CNT_TIME, ",
+  "diff_time, b.ALR_TY_CD AS ALR_TY_CD, typ, c.GRP_MAIL_IN AS SummaryType, TPL_TX AS BatchTemplate, ACTN_STNG AS ActionString, EML_ADDR as EmailAddress ",
   "FROM ( ",
          "SELECT time_view.cust_id AS cust_id, pre_time, cnt_time, WSO2_SP_ALERT_SUMMARY.ALR_TY_CD, (cnt_time - pre_time) AS diff_time, typ, TPL_TX, WSO2_SP_OUTPUT_TABLE.ACTN_STNG, EMLT_EML_ADDR.EML_ADDR ",
             "FROM ( ",
@@ -50,8 +55,8 @@ select concatinatedtemplate, str:concat("SELECT DISTINCT CUST_ID, PRE_TIME, CNT_
      "WHERE time_view.cust_id = NUSA_USR_SUMM_ALR.CUST_ID AND time_view.cust_id = WSO2_SP_ALERT_SUMMARY.CUST_ID ",
            "AND WSO2_SP_ALERT_SUMMARY.MSG_ID = WSO2_SP_OUTPUT_TABLE.MSG_ID AND WSO2_SP_ALERT_SUMMARY.TPC = WSO2_SP_OUTPUT_TABLE.TPC ",
            "AND WSO2_SP_ALERT_SUMMARY.CUST_ID = EMLT_EML_ADDR.CUST_ID ",
-            "AND NUSA_USR_SUMM_ALR.EACT_CD = EMLT_EML_ADDR.EACT_CD ",
-           "AND WSO2_SP_ALERT_SUMMARY.CREATED_TIME BETWEEN pre_time AND cnt_time ",
+            --"AND NUSA_USR_SUMM_ALR.EACT_CD = EMLT_EML_ADDR.EACT_CD ",
+          -- "AND WSO2_SP_ALERT_SUMMARY.CREATED_TIME BETWEEN pre_time AND cnt_time ",
            "AND TPTT_TPL.TPL_CD = CONCAT(CONCAT('BATCH.', WSO2_SP_ALERT_SUMMARY.ALR_TY_CD), '.EMAIL.HTML')) ",
      "a RIGHT OUTER JOIN NUSA_USR_SUMM_ALR b ",
      "ON b.cust_id = a.cust_id AND b.ALR_TY_CD = a.ALR_TY_CD ",
@@ -69,12 +74,12 @@ group by CUST_ID, summaryType
 insert into TempStream2;
 
 from TempStream2
-select summary, str: replaceFirst(str: replaceFirst(str: replaceFirst(subjectString, "\$\*BatchIntervalText\^", DIFF_TIME), "\$\*StartQueryTime\^", PRE_TIME), 
+select summary, str: replaceFirst(str: replaceFirst(str: replaceFirst(subjectString, "\$\*BatchIntervalText\^", ""), "\$\*StartQueryTime\^", PRE_TIME), 
 "\$\*EndQueryTime\^", CNT_TIME) as subject, EmailAddress
 insert into TempStream3;
 
 from TempStream3
-select str:substr(summary, '(?ms)(?!\A)^\S.*') as summary,  str:trim(str:substr(summary, 'Content-type:(.*)', 1)) as contentType, EmailAddress
+select str:substr(summary, '(?ms)(?!\A)^\S.*') as summary,  str:trim(str:substr(summary, 'Content-type:(.*)', 1)) as contentType, EmailAddress, subject
 insert into TempStream4;
 
 from TempStream4
