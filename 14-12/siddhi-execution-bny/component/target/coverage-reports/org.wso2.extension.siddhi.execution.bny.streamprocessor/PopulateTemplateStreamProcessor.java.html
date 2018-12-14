@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PopulateTemplateStreamProcessor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Siddhi execution of BNY</a> &gt; <a href="index.source.html" class="el_package">org.wso2.extension.siddhi.execution.bny.streamprocessor</a> &gt; <span class="el_source">PopulateTemplateStreamProcessor.java</span></div><h1>PopulateTemplateStreamProcessor.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (c)  2016, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the &quot;License&quot;); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+package org.wso2.extension.siddhi.execution.bny.streamprocessor;
+
+import org.wso2.extension.siddhi.execution.bny.util.PopulateFromMap;
+import org.wso2.siddhi.annotation.Example;
+import org.wso2.siddhi.annotation.Extension;
+import org.wso2.siddhi.annotation.Parameter;
+import org.wso2.siddhi.annotation.ReturnAttribute;
+import org.wso2.siddhi.annotation.util.DataType;
+import org.wso2.siddhi.core.config.SiddhiAppContext;
+import org.wso2.siddhi.core.event.ComplexEventChunk;
+import org.wso2.siddhi.core.event.stream.StreamEvent;
+import org.wso2.siddhi.core.event.stream.StreamEventCloner;
+import org.wso2.siddhi.core.event.stream.populater.ComplexEventPopulater;
+import org.wso2.siddhi.core.exception.SiddhiAppRuntimeException;
+import org.wso2.siddhi.core.executor.ExpressionExecutor;
+import org.wso2.siddhi.core.executor.VariableExpressionExecutor;
+import org.wso2.siddhi.core.query.processor.Processor;
+import org.wso2.siddhi.core.query.processor.stream.StreamProcessor;
+import org.wso2.siddhi.core.util.config.ConfigReader;
+import org.wso2.siddhi.query.api.definition.AbstractDefinition;
+import org.wso2.siddhi.query.api.definition.Attribute;
+import org.wso2.siddhi.query.api.exception.SiddhiAppValidationException;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * populateTemplate(TPL_TX, TPL_CD, STRUCTURED_PROPERTY_MAP)
+ * Returns a new string that is populated with the values from the STRUCTURED_PROPERTY_MAP
+ * Accept Type(s): (STRING,STRING,OBJECT)
+ * Return Type(s): STRING,STRING
+ */
+@Extension(
+        name = &quot;populateTemplate&quot;,
+        namespace = &quot;bny&quot;,
+        description = &quot;Returns the populated template text with the values from the STRUCTURED_PROPERTY_MAP.&quot;,
+        parameters = {
+                @Parameter(name = &quot;template.string&quot;,
+                        description = &quot;The template that needs to be populated.&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;tpl.cd&quot;,
+                        description = &quot;Template category.&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;structured.property.map&quot;,
+                        description = &quot;Key value pairs extracted from the raw incoming message.&quot;,
+                        type = {DataType.OBJECT})
+        },
+        returnAttributes = {
+                @ReturnAttribute(name = &quot;populatedBody&quot;,
+                        description = &quot;The populated template.&quot;,
+                        type = {DataType.STRING}),
+                @ReturnAttribute(name = &quot;publishType&quot;,
+                        description = &quot;The publish strategy for the template.&quot;,
+                        type = {DataType.STRING})
+        },
+        examples = {
+                @Example(description = &quot;This populates the template in TPL_TX by looping through the values in &quot;
+                        + &quot;STRUCTURED_PROPERTY_MAP. And returns the populated template and the publish strategy &quot;
+                        + &quot;for the template.&quot;,
+                        syntax = &quot;populateTemplate(TPL_TX, TPL_CD, STRUCTURED_PROPERTY_MAP)&quot;)
+        }
+)
+<span class="nc" id="L83">public class PopulateTemplateStreamProcessor extends StreamProcessor {</span>
+    private static final int MAX_PARAMETER_COUNT = 3;
+
+    @Override
+    protected List&lt;Attribute&gt; init(AbstractDefinition abstractDefinition, ExpressionExecutor[] expressionExecutors,
+                                   ConfigReader configReader, SiddhiAppContext siddhiAppContext) {
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (attributeExpressionExecutors.length != MAX_PARAMETER_COUNT) {</span>
+<span class="nc" id="L90">            throw new SiddhiAppValidationException(&quot;bny:populateTemplate() extension requires exactly &quot; +</span>
+                    &quot;three parameters, namely TemplateString, PropertiesMap and TemplateType&quot;);
+        }
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        for (int i = 0; i &lt; MAX_PARAMETER_COUNT; i++) {</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">            if (!(attributeExpressionExecutors[i] instanceof VariableExpressionExecutor)) {</span>
+<span class="nc" id="L95">                throw new SiddhiAppValidationException(String.format(&quot;bny:populateTemplate() &quot; +</span>
+<span class="nc" id="L96">                        &quot;VariableExpressionExecutor as the %s parameter&quot;, i));</span>
+            }
+        }
+<span class="nc" id="L99">        List&lt;Attribute&gt; attributes = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L100">        attributes.add(new Attribute(&quot;populatedBody&quot;, Attribute.Type.STRING));</span>
+<span class="nc" id="L101">        attributes.add(new Attribute(&quot;publishType&quot;, Attribute.Type.STRING));</span>
+<span class="nc" id="L102">        return attributes;</span>
+    }
+
+    @Override
+    protected void process(ComplexEventChunk&lt;StreamEvent&gt; streamEventChunk, Processor processor,
+                           StreamEventCloner streamEventCloner, ComplexEventPopulater complexEventPopulater) {
+<span class="nc bnc" id="L108" title="All 2 branches missed.">            while (streamEventChunk.hasNext()) {</span>
+<span class="nc" id="L109">                StreamEvent event = streamEventChunk.next();</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">                for (int i = 0; i &lt; attributeExpressionLength; i++) {</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">                    if (attributeExpressionExecutors[i].execute(event) == null) {</span>
+<span class="nc" id="L112">                        throw new SiddhiAppRuntimeException(&quot;populateTemplate extension does not accept Null &quot;</span>
+                                + &quot;at position:&quot; + i);
+                    }
+                }
+<span class="nc" id="L116">                String template = (String) attributeExpressionExecutors[0].execute(event);</span>
+<span class="nc" id="L117">                String templateType = (String) attributeExpressionExecutors[1].execute(event);</span>
+<span class="nc" id="L118">                HashMap&lt;String, String&gt; propertiesMap =</span>
+<span class="nc" id="L119">                        (HashMap&lt;String, String&gt;) attributeExpressionExecutors[2].execute(event);</span>
+<span class="nc" id="L120">                String populatedTemplate = PopulateFromMap.populateTemplateFromMap(propertiesMap, template);</span>
+<span class="nc" id="L121">                String type = &quot;&quot;;</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">                if (templateType.contains(&quot;BATCH&quot;)) {</span>
+<span class="nc" id="L123">                    type = &quot;BATCH&quot;;</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">                } else if (templateType.contains(&quot;CELL&quot;)) {</span>
+<span class="nc" id="L125">                    type = &quot;CELL&quot;;</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">                } else if (templateType.equalsIgnoreCase(&quot;SUBJECT&quot;)) {</span>
+<span class="nc" id="L127">                    type = &quot;SUBJECT&quot;;</span>
+                } else {
+<span class="nc" id="L129">                    type = &quot;EMAIL&quot;;</span>
+                }
+<span class="nc" id="L131">                Object[] data = {populatedTemplate, type};</span>
+                // If output has values, then add those values to output stream
+<span class="nc" id="L133">                complexEventPopulater.populateComplexEvent(event, data);</span>
+<span class="nc" id="L134">            }</span>
+<span class="nc" id="L135">        nextProcessor.process(streamEventChunk);</span>
+<span class="nc" id="L136">    }</span>
+
+    @Override
+    public void start() {
+<span class="nc" id="L140">    }</span>
+
+    @Override
+    public void stop() {
+<span class="nc" id="L144">    }</span>
+
+    @Override
+    public Map&lt;String, Object&gt; currentState() {
+<span class="nc" id="L148">        return new HashMap&lt;&gt;();    //No need to maintain a state.</span>
+    }
+
+    @Override
+    public void restoreState(Map&lt;String, Object&gt; map) {
+<span class="nc" id="L153">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.7.8.201612092310</span></div></body></html>

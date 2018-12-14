@@ -1,0 +1,8 @@
+org.wso2.extension.siddhi.execution.bny.aggregate.CreateEvalStringFunctionExtension
+org.wso2.extension.siddhi.execution.bny.aggregate.CreateMapFromBatchFunctionExtension
+org.wso2.extension.siddhi.execution.bny.aggregate.GroupConcatFunctionExtension
+org.wso2.extension.siddhi.execution.bny.aggregate.PopulateSummaryTemplateFunctionExtension
+org.wso2.extension.siddhi.execution.bny.streamfunction.CreateMapFromReferenceFunctionExtension
+org.wso2.extension.siddhi.execution.bny.streamfunction.CreateMapFunctionExtension
+org.wso2.extension.siddhi.execution.bny.streamprocessor.EvaluateStreamProcessor
+org.wso2.extension.siddhi.execution.bny.streamprocessor.PopulateTemplateStreamProcessor

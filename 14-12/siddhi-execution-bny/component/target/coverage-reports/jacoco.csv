@@ -1,0 +1,13 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.aggregate,CreateMapFromBatchFunctionExtension,248,0,20,0,47,0,21,0,11,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.aggregate,CreateEvalStringFunctionExtension,992,0,78,0,151,0,55,0,16,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.aggregate,GroupConcatFunctionExtension,206,0,16,0,51,0,20,0,12,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.aggregate,PopulateSummaryTemplateFunctionExtension,337,0,24,0,71,0,25,0,13,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.util,CreateMapFromJSON,100,0,6,0,24,0,6,0,3,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.util,PopulateFromMap,92,0,8,0,20,0,7,0,3,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.util,RegexUtil,28,26,2,2,3,8,3,2,1,2
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.bean,Expression,162,0,14,0,49,0,26,0,19,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.streamprocessor,EvaluateStreamProcessor,94,208,14,14,14,46,15,9,3,7
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.streamprocessor,PopulateTemplateStreamProcessor,176,0,18,0,38,0,16,0,7,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.streamfunction,CreateMapFromReferenceFunctionExtension,159,0,12,0,30,0,13,0,7,0
+Siddhi execution of BNY,org.wso2.extension.siddhi.execution.bny.streamfunction,CreateMapFunctionExtension,315,0,30,0,66,0,25,0,8,0

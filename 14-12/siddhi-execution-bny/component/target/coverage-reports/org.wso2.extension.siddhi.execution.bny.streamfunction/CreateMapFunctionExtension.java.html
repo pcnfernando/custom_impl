@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CreateMapFunctionExtension.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Siddhi execution of BNY</a> &gt; <a href="index.source.html" class="el_package">org.wso2.extension.siddhi.execution.bny.streamfunction</a> &gt; <span class="el_source">CreateMapFunctionExtension.java</span></div><h1>CreateMapFunctionExtension.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (c)  2018, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the &quot;License&quot;); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+package org.wso2.extension.siddhi.execution.bny.streamfunction;
+
+import org.apache.commons.lang3.math.NumberUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.wso2.siddhi.annotation.Example;
+import org.wso2.siddhi.annotation.Extension;
+import org.wso2.siddhi.annotation.Parameter;
+import org.wso2.siddhi.annotation.ReturnAttribute;
+import org.wso2.siddhi.annotation.util.DataType;
+import org.wso2.siddhi.core.config.SiddhiAppContext;
+import org.wso2.siddhi.core.exception.SiddhiAppRuntimeException;
+import org.wso2.siddhi.core.executor.ExpressionExecutor;
+import org.wso2.siddhi.core.executor.function.FunctionExecutor;
+import org.wso2.siddhi.core.util.config.ConfigReader;
+import org.wso2.siddhi.query.api.definition.Attribute;
+import org.wso2.siddhi.query.api.exception.SiddhiAppValidationException;
+
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * createMap(MQ_Raw_Message, GroupedKeys)
+ * Returns a map with extracted keys and values.
+ * Accept Type(s): (STRING,STRING)
+ * Return Type(s): OBJECT
+ */
+
+@Extension(
+        name = &quot;createMap&quot;,
+        namespace = &quot;bny&quot;,
+        description = &quot;Returns a map with values extracted from the raw message.&quot;,
+        parameters = {
+                @Parameter(name = &quot;raw.input.message&quot;,
+                        description = &quot;The input string to be processed.&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;grouped.keys&quot;,
+                        description = &quot;Process string used to extract values from the raw message.&quot;,
+                        type = {DataType.STRING})
+        },
+        returnAttributes = @ReturnAttribute(
+                description = &quot;This returns a map with values extracted from the raw message.&quot;,
+                type = {DataType.OBJECT}),
+        examples = @Example(description = &quot;This returns a boolean value by evaluation the given expression. &quot;
+                + &quot;In this case, it will return a map extracted from the raw message using grouped.keys &quot;
+                + &quot;to process the message.&quot;,
+                syntax = &quot;bny:createMap(message, groupedKeys)&quot;)
+)
+<span class="nc" id="L69">public class CreateMapFunctionExtension extends FunctionExecutor {</span>
+
+<span class="nc" id="L71">    private static final Logger logger = LoggerFactory.getLogger(CreateMapFunctionExtension.class);</span>
+<span class="nc" id="L72">    Attribute.Type returnType = Attribute.Type.OBJECT;</span>
+    private static final int COLUMN_COUNT = 7;
+    private static final String ATTRIBUTE_DELIMITER = &quot;#&quot;;
+    private static final String OBJECT_DELIMITER = &quot;,&quot;;
+    private static final String ATTRIBUTE_TYPE_CONSTANT = &quot;CONST&quot;;
+    private static final String NO_ATTRIBUTE_REFERENCE = &quot;NOCOPY&quot;;
+    private static final String NUMBER_FORMAT_FIELD = &quot;DBL&quot;;
+
+    @Override
+    protected void init(ExpressionExecutor[] attributeExpressionExecutors, ConfigReader configReader,
+                        SiddhiAppContext siddhiAppContext) {
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        if (attributeExpressionExecutors.length != 2) {</span>
+<span class="nc" id="L84">            throw new SiddhiAppValidationException(&quot;bny:createMap() function requires exactly 2 parameters, &quot;</span>
+                    + &quot;namely the Raw MQ Message and the Grouped Keys process string, but found &quot;
+                    + attributeExpressionExecutors.length);
+        }
+<span class="nc bnc" id="L88" title="All 2 branches missed.">        if (attributeExpressionExecutors[0].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L89">            throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the raw.message argument of &quot;</span>
+                    + &quot;bny:createMap() function, &quot; + &quot;required &quot; + Attribute.Type.STRING + &quot;, but found &quot;
+<span class="nc" id="L91">                    + attributeExpressionExecutors[0].getReturnType().toString());</span>
+        }
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        if (attributeExpressionExecutors[1].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L94">            throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the grouped keys argument of &quot;</span>
+                    + &quot;bny:createMap() function, &quot; + &quot;required &quot; + Attribute.Type.STRING + &quot;, but found &quot;
+<span class="nc" id="L96">                    + attributeExpressionExecutors[0].getReturnType().toString());</span>
+        }
+<span class="nc" id="L98">    }</span>
+
+    @Override
+    protected Object execute(Object[] data) {
+<span class="nc" id="L102">        Map&lt;String, String&gt; map = new LinkedHashMap&lt;&gt;();</span>
+        String rawEvent;
+        String processString;
+<span class="nc bnc" id="L105" title="All 2 branches missed.">        for (int i = 0; i &lt; data.length; i++) {</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">            if (data[i] == null) {</span>
+<span class="nc" id="L107">                throw new SiddhiAppRuntimeException(String.format(&quot;Invalid input given to str:createEvalStr() &quot;</span>
+<span class="nc" id="L108">                        + &quot;function. %s argument cannot be null&quot;, (i + 1)));</span>
+            }
+        }
+<span class="nc" id="L111">        rawEvent = (String) data[0];</span>
+<span class="nc" id="L112">        processString = (String) data[1];</span>
+<span class="nc" id="L113">        String[] eventObjects = processString.split(OBJECT_DELIMITER);</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">        for (String event : eventObjects) {</span>
+<span class="nc" id="L115">            String[] tokens = event.split(ATTRIBUTE_DELIMITER);</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">            if (tokens.length == COLUMN_COUNT) {</span>
+<span class="nc" id="L117">                String fieldName = tokens[0];</span>
+<span class="nc" id="L118">                String fieldDataType = tokens[1];</span>
+<span class="nc" id="L119">                String fieldDataSize = tokens[2];</span>
+<span class="nc" id="L120">                String fieldExpandStr = tokens[3];</span>
+<span class="nc" id="L121">                String fieldCopyStr = tokens[4];</span>
+<span class="nc" id="L122">                String fieldType = tokens[5];</span>
+<span class="nc" id="L123">                int startIndex = Integer.parseInt(tokens[6]);</span>
+<span class="nc" id="L124">                int endIndex = startIndex + Integer.parseInt(fieldDataSize);</span>
+<span class="nc" id="L125">                String value = &quot;&quot;;</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">                if (fieldDataType.equalsIgnoreCase(ATTRIBUTE_TYPE_CONSTANT)) {</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">                    if (fieldCopyStr.equalsIgnoreCase(NO_ATTRIBUTE_REFERENCE)) {</span>
+<span class="nc" id="L128">                        value = fieldExpandStr;</span>
+                    } else {
+<span class="nc" id="L130">                        value = map.get(fieldCopyStr);</span>
+                    }
+                } else {
+                    try {
+<span class="nc" id="L134">                        value = rawEvent.substring(startIndex, endIndex);</span>
+<span class="nc" id="L135">                    } catch (Throwable e) {</span>
+<span class="nc" id="L136">                        logger.error(&quot;Error occurred when retrieving &quot; + fieldName</span>
+                                + &quot; start:&quot; + startIndex + &quot; end:&quot; + endIndex);
+<span class="nc" id="L138">                    }</span>
+                }
+<span class="nc bnc" id="L140" title="All 2 branches missed.">                if (fieldType.contains(NUMBER_FORMAT_FIELD)) {</span>
+<span class="nc" id="L141">                    int numberOfDecimals = Integer.valueOf(fieldType.replaceAll(NUMBER_FORMAT_FIELD, &quot;&quot;));</span>
+<span class="nc" id="L142">                    NumberFormat formatter = null;</span>
+<span class="nc bnc" id="L143" title="All 6 branches missed.">                    switch (numberOfDecimals) {</span>
+                        case 1: {
+<span class="nc" id="L145">                            formatter = new DecimalFormat(&quot;#,###.0&quot;);</span>
+<span class="nc" id="L146">                            break;</span>
+                        }
+                        case 2: {
+<span class="nc" id="L149">                            formatter = new DecimalFormat(&quot;#,###.00&quot;);</span>
+<span class="nc" id="L150">                            break;</span>
+                        }
+                        case 3: {
+<span class="nc" id="L153">                            formatter = new DecimalFormat(&quot;#,###.000&quot;);</span>
+<span class="nc" id="L154">                            break;</span>
+                        }
+                        case 4: {
+<span class="nc" id="L157">                            formatter = new DecimalFormat(&quot;#,###.0000&quot;);</span>
+<span class="nc" id="L158">                            break;</span>
+                        }
+                        case 5: {
+<span class="nc" id="L161">                            formatter = new DecimalFormat(&quot;#,###.00000&quot;);</span>
+<span class="nc" id="L162">                            break;</span>
+                        }
+                        default:
+                            break;
+                    }
+<span class="nc bnc" id="L167" title="All 4 branches missed.">                    if (formatter != null &amp;&amp; NumberUtils.isCreatable(value)) {</span>
+<span class="nc" id="L168">                        double amount = Double.parseDouble(value);</span>
+<span class="nc" id="L169">                        value = formatter.format(amount);</span>
+                    }
+                }
+<span class="nc" id="L172">                map.put(fieldName, value.trim());</span>
+<span class="nc" id="L173">            } else {</span>
+<span class="nc" id="L174">                throw new SiddhiAppRuntimeException(String.format(&quot;Invalid input given for bny:createMap() function. &quot;</span>
+                        + &quot;Second argument contains %s attributes. Please check the output &quot;
+<span class="nc" id="L176">                        + &quot;from the bny:groupConcat() function.&quot;, tokens.length));</span>
+            }
+        }
+<span class="nc" id="L179">        return map;</span>
+    }
+
+    @Override
+    protected Object execute(Object data) {
+<span class="nc" id="L184">        return null;  //Since the createMap function takes in exactly 2 parameters, this method does not get called.</span>
+        // Hence, not implemented.
+    }
+
+    @Override
+    public Attribute.Type getReturnType() {
+<span class="nc" id="L190">        return returnType;</span>
+    }
+
+    @Override
+    public Map&lt;String, Object&gt; currentState() {
+<span class="nc" id="L195">        return null;    //No need to maintain a state.</span>
+    }
+
+    @Override
+    public void restoreState(Map&lt;String, Object&gt; map) {
+<span class="nc" id="L200">    }</span>
+}
+
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.7.8.201612092310</span></div></body></html>

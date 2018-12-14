@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PopulateSummaryTemplateFunctionExtension.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Siddhi execution of BNY</a> &gt; <a href="index.source.html" class="el_package">org.wso2.extension.siddhi.execution.bny.aggregate</a> &gt; <span class="el_source">PopulateSummaryTemplateFunctionExtension.java</span></div><h1>PopulateSummaryTemplateFunctionExtension.java</h1><pre class="source lang-java linenums">package org.wso2.extension.siddhi.execution.bny.aggregate;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.wso2.extension.siddhi.execution.bny.util.CreateMapFromJSON;
+import org.wso2.extension.siddhi.execution.bny.util.PopulateFromMap;
+import org.wso2.extension.siddhi.execution.bny.util.RegexUtil;
+import org.wso2.siddhi.annotation.Example;
+import org.wso2.siddhi.annotation.Extension;
+import org.wso2.siddhi.annotation.Parameter;
+import org.wso2.siddhi.annotation.ReturnAttribute;
+import org.wso2.siddhi.annotation.util.DataType;
+import org.wso2.siddhi.core.config.SiddhiAppContext;
+import org.wso2.siddhi.core.exception.SiddhiAppRuntimeException;
+import org.wso2.siddhi.core.executor.ExpressionExecutor;
+import org.wso2.siddhi.core.executor.VariableExpressionExecutor;
+import org.wso2.siddhi.core.query.selector.attribute.aggregator.AttributeAggregator;
+import org.wso2.siddhi.core.util.config.ConfigReader;
+import org.wso2.siddhi.query.api.definition.Attribute;
+import org.wso2.siddhi.query.api.exception.SiddhiAppValidationException;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * populateSummary(alertCategory, summaryType, concatenatedTemplate, batchTemplate, actionString)
+ * Returns summary email String populated from the provided template.
+ * Accept Type(s): (STRING, STRING, STRING, STRING, STRING, STRING)
+ * Return Type(s): STRING
+ */
+@Extension(
+        name = &quot;populateSummary&quot;,
+        namespace = &quot;bny&quot;,
+        description = &quot;Returns summary email populated from the provided template &quot;,
+        parameters = {
+                @Parameter(name = &quot;alert.category&quot;,
+                        description = &quot;ALR_TY_CD of the alert sent&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;summary.type&quot;,
+                        description = &quot;Type of summary. It can be either 'A' or 'T'. Type 'A' stands for &quot;
+                                + &quot;summary created from multiple alert categories where as 'T' stands for &quot;
+                                + &quot;a single alert category&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;concatenated.template&quot;,
+                        description = &quot;Concatenated summary email templates&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;batch.template&quot;,
+                        description = &quot;Batch Summary Template for the specific alert.category&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;action.string&quot;,
+                        description = &quot;JSON formatted action string of the sent-out alert&quot;,
+                        type = {DataType.STRING}),
+
+        },
+        returnAttributes = @ReturnAttribute(
+                description = &quot;This returns the summary email for the sent-out alerts provided.&quot;,
+                type = {DataType.OBJECT}),
+        examples = @Example(description = &quot;This returns summary created for the provided sent-out alerts. &quot;,
+                syntax = &quot;populateSummary(alertCategory, summaryType, concatenatedTemplate, &quot; +
+                        &quot;batchTemplate, actionString)&quot;)
+)
+<span class="nc" id="L65">public class PopulateSummaryTemplateFunctionExtension extends AttributeAggregator {</span>
+<span class="nc" id="L66">    private static final Logger LOG = LoggerFactory.getLogger(PopulateSummaryTemplateFunctionExtension.class);</span>
+    private static final String SUMMARY_HEADER_REGEX = &quot;(BatchEmail_GroupHeader\\?=\\?)(.+?)\\*=\\*&quot;;
+    private static final String SUMMARY_FOOTER_REGEX = &quot;(BatchEmail_GroupFooter\\?=\\?)(.+?)\\*=\\*&quot;;
+
+    private String summaryHeader;
+    private String summaryFooter;
+    private String concatenatedTemplate;
+<span class="nc" id="L73">    private Attribute.Type returnType = Attribute.Type.STRING;</span>
+    private Map&lt;String, List&lt;String&gt;&gt; map;
+<span class="nc" id="L75">    private boolean canDestroy = true;</span>
+
+    @Override
+    protected void init(ExpressionExecutor[] attributeExpressionExecutors, ConfigReader configReader,
+                        SiddhiAppContext siddhiAppContext) {
+<span class="nc bnc" id="L80" title="All 2 branches missed.">        if (attributeExpressionExecutors.length != 5) {</span>
+<span class="nc" id="L81">            throw new SiddhiAppValidationException(&quot;bny:populateSummary() function requires exactly 5 parameters, &quot;</span>
+                    + &quot;namely AlertCategory, SummaryType, ConcatenatedTemplateString, BatchTemplate, ActionString&quot;);
+        }
+<span class="nc bnc" id="L84" title="All 2 branches missed.">        for (int i = 0; i &lt; attributeExpressionExecutors.length; i++) {</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">            if (attributeExpressionExecutors[i] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">                if (attributeExpressionExecutors[i].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L87">                    throw new SiddhiAppValidationException(&quot;Invalid parameter type found as the &quot; + i</span>
+                            + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L89">                            + attributeExpressionExecutors[i].getReturnType().toString());</span>
+                }
+            } else {
+<span class="nc" id="L92">                throw new SiddhiAppValidationException(&quot;Parameter attribute.mapping must be a variable but found &quot;</span>
+<span class="nc" id="L93">                        + attributeExpressionExecutors[i].getClass().getCanonicalName());</span>
+            }
+        }
+<span class="nc" id="L96">        map = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L97">    }</span>
+
+    @Override
+    public Attribute.Type getReturnType() {
+<span class="nc" id="L101">        return returnType;</span>
+    }
+
+    @Override
+    public Object processAdd(Object o) {
+<span class="nc" id="L106">        return null; //Since the populateSummary function requires more than one parameter,</span>
+        // this method does not get called. Hence, not implemented.
+    }
+
+    @Override
+    public synchronized Object processAdd(Object[] objects) {
+<span class="nc bnc" id="L112" title="All 2 branches missed.">        for (int i = 0; i &lt; objects.length; i++) {</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">            if (objects[i] == null) {</span>
+<span class="nc" id="L114">                throw new SiddhiAppRuntimeException(String.format(&quot;Invalid input given to str:populateSummary() &quot; +</span>
+<span class="nc" id="L115">                        &quot;function. %s argument cannot be null&quot;, (i + 1)));</span>
+            }
+        }
+<span class="nc" id="L118">        String alertCategory = (String) objects[0];</span>
+<span class="nc" id="L119">        String summaryType = (String) objects[1];</span>
+<span class="nc" id="L120">        concatenatedTemplate = (String) objects[2];</span>
+<span class="nc" id="L121">        String batchTemplate = (String) objects[3];</span>
+<span class="nc" id="L122">        String actionString = (String) objects[4];</span>
+
+<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (map.get(alertCategory) == null) {</span>
+<span class="nc" id="L125">            List&lt;String&gt; list = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L126">            map.put(alertCategory, list);</span>
+        }
+<span class="nc bnc" id="L128" title="All 2 branches missed.">        if (summaryHeader == null) {</span>
+<span class="nc" id="L129">            summaryHeader = RegexUtil.runRegex(SUMMARY_HEADER_REGEX, concatenatedTemplate, 2);</span>
+        }
+<span class="nc bnc" id="L131" title="All 2 branches missed.">        if (summaryFooter == null) {</span>
+<span class="nc" id="L132">            summaryFooter = RegexUtil.runRegex(SUMMARY_FOOTER_REGEX, concatenatedTemplate, 2);</span>
+        }
+<span class="nc" id="L134">        Map propertiesMap = (Map) CreateMapFromJSON.createMapFromJson(actionString);</span>
+<span class="nc" id="L135">        String populatedTemplate = PopulateFromMap.populateTemplateFromMap(propertiesMap, batchTemplate);</span>
+<span class="nc" id="L136">        map.get(alertCategory).add(populatedTemplate);</span>
+<span class="nc" id="L137">        return constructConcatString();</span>
+    }
+
+    private Object constructConcatString() {
+<span class="nc" id="L141">        StringBuilder stringBuilder = new StringBuilder();</span>
+<span class="nc" id="L142">        stringBuilder.append(summaryHeader);</span>
+<span class="nc" id="L143">        Iterator&lt;Map.Entry&lt;String, List&lt;String&gt;&gt;&gt; iterator = map.entrySet().iterator();</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">        while (iterator.hasNext()) {</span>
+<span class="nc" id="L145">            Map.Entry&lt;String, List&lt;String&gt;&gt; pair = (Map.Entry&lt;String, List&lt;String&gt;&gt;) iterator.next();</span>
+<span class="nc" id="L146">            String groupHeaderRegex = &quot;(BatchEmail_GroupHeader_&quot;;</span>
+<span class="nc" id="L147">            groupHeaderRegex = groupHeaderRegex.concat(pair.getKey()).concat(&quot;\\?=\\?)(.+?)\\*=\\*&quot;);</span>
+<span class="nc" id="L148">            String typeHeader = RegexUtil.runRegex(groupHeaderRegex, concatenatedTemplate, 2);</span>
+<span class="nc" id="L149">            stringBuilder.append(typeHeader);</span>
+<span class="nc" id="L150">            List&lt;String&gt; value = (ArrayList&lt;String&gt;) pair.getValue();</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">            for (String message : value) {</span>
+<span class="nc" id="L152">                stringBuilder.append(message);</span>
+<span class="nc" id="L153">            }</span>
+<span class="nc" id="L154">            String groupFooterRegex = &quot;(BatchEmail_GroupFooter_&quot;;</span>
+<span class="nc" id="L155">            groupFooterRegex = groupFooterRegex.concat(pair.getKey()).concat(&quot;\\?=\\?)(.+?)\\*=\\*&quot;);</span>
+<span class="nc" id="L156">            String typeFOOTER = RegexUtil.runRegex(groupFooterRegex, concatenatedTemplate, 2);</span>
+<span class="nc" id="L157">            stringBuilder.append(typeFOOTER);</span>
+<span class="nc" id="L158">        }</span>
+<span class="nc" id="L159">        stringBuilder.append(summaryFooter);</span>
+<span class="nc" id="L160">        return stringBuilder.toString();</span>
+    }
+
+    @Override
+    public Object processRemove(Object o) {
+<span class="nc" id="L165">        return null;</span>
+    }
+
+    @Override
+    public Object processRemove(Object[] objects) {
+<span class="nc" id="L170">        map.remove(objects[0]);</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">        if (map.size() == 0) {</span>
+<span class="nc" id="L172">            canDestroy = true;</span>
+        }
+<span class="nc" id="L174">        return constructConcatString();</span>
+    }
+
+    @Override
+    public boolean canDestroy() {
+<span class="nc" id="L179">        return canDestroy;</span>
+    }
+
+    @Override
+    public Object reset() {
+<span class="nc" id="L184">        map.clear();</span>
+<span class="nc" id="L185">        canDestroy = true;</span>
+<span class="nc" id="L186">        return &quot;&quot;;</span>
+    }
+
+    @Override
+    public Map&lt;String, Object&gt; currentState() {
+<span class="nc" id="L191">        HashMap&lt;String, Object&gt; state = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L192">        state.put(&quot;dataSet&quot;, map);</span>
+<span class="nc" id="L193">        return state;</span>
+    }
+
+    @Override
+    public void restoreState(Map&lt;String, Object&gt; state) {
+<span class="nc" id="L198">        map = (Map&lt;String, List&lt;String&gt;&gt;) state.get(&quot;dataSet&quot;);</span>
+<span class="nc" id="L199">    }</span>
+}
+
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.7.8.201612092310</span></div></body></html>

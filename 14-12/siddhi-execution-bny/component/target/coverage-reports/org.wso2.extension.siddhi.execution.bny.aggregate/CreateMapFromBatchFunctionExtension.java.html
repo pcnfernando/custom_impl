@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CreateMapFromBatchFunctionExtension.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Siddhi execution of BNY</a> &gt; <a href="index.source.html" class="el_package">org.wso2.extension.siddhi.execution.bny.aggregate</a> &gt; <span class="el_source">CreateMapFromBatchFunctionExtension.java</span></div><h1>CreateMapFromBatchFunctionExtension.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (c) 2018, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the &quot;License&quot;); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+package org.wso2.extension.siddhi.execution.bny.aggregate;
+
+import org.wso2.siddhi.annotation.Example;
+import org.wso2.siddhi.annotation.Extension;
+import org.wso2.siddhi.annotation.Parameter;
+import org.wso2.siddhi.annotation.ReturnAttribute;
+import org.wso2.siddhi.annotation.util.DataType;
+import org.wso2.siddhi.core.config.SiddhiAppContext;
+import org.wso2.siddhi.core.exception.SiddhiAppRuntimeException;
+import org.wso2.siddhi.core.executor.ExpressionExecutor;
+import org.wso2.siddhi.core.executor.VariableExpressionExecutor;
+import org.wso2.siddhi.core.query.selector.attribute.aggregator.AttributeAggregator;
+import org.wso2.siddhi.core.util.config.ConfigReader;
+import org.wso2.siddhi.query.api.definition.Attribute;
+import org.wso2.siddhi.query.api.exception.SiddhiAppValidationException;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * createMapFromBatch(key, value)
+ * Returns a hashmap object created from provided key-value pairs.
+ * Accept Type(s): STRING. Key.
+ * Accept Type(s): STRING. Value.
+ * Return Type(s): OBJECT
+ */
+@Extension(
+        name = &quot;createMapFromBatch&quot;,
+        namespace = &quot;bny&quot;,
+        description = &quot;Aggregates the received key-value pairs and returns an hashmap object&quot;,
+        parameters = {
+                @Parameter(name = &quot;key&quot;,
+                        description = &quot;Key of the key-value pair&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;value&quot;,
+                        description = &quot;Value of the key-value pair&quot;,
+                        type = {DataType.STRING})
+        },
+        returnAttributes = @ReturnAttribute(
+                description = &quot;Returns a hashmap object aggregated from the provided key-value pairs&quot;,
+                type = {DataType.OBJECT}),
+        examples = @Example(description = &quot;This returns a hashmap object aggregated from key-value pairs provided.&quot;,
+                syntax = &quot;createMapFromBatch(VARL_NM, DATA_TAG_NM) as PROPERTY_MAPPING&quot;)
+)
+<span class="nc" id="L63">public class CreateMapFromBatchFunctionExtension extends AttributeAggregator {</span>
+
+<span class="nc" id="L65">    private Attribute.Type returnType = Attribute.Type.OBJECT;</span>
+    private Map&lt;String, String&gt; dataSet;
+<span class="nc" id="L67">    private boolean canDestroy = false;</span>
+
+    @Override
+    protected void init(ExpressionExecutor[] attributeExpressionExecutors, ConfigReader configReader,
+                        SiddhiAppContext siddhiAppContext) {
+
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        if (attributeExpressionExecutors.length != 2) {</span>
+<span class="nc" id="L74">            throw new SiddhiAppValidationException(&quot;bny:createMapFromBatch() function requires exactly &quot; +</span>
+                    &quot;two attributes.&quot;);
+        }
+<span class="nc bnc" id="L77" title="All 2 branches missed.">        if (attributeExpressionExecutors[0] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">            if (attributeExpressionExecutors[0].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L79">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the key &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L81">                        + attributeExpressionExecutors[0].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L84">            throw new SiddhiAppValidationException(&quot;Parameter key must be a variable but found &quot;</span>
+<span class="nc" id="L85">                    + attributeExpressionExecutors[0].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L87" title="All 2 branches missed.">        if (attributeExpressionExecutors[1] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">            if (attributeExpressionExecutors[1].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L89">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the value &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L91">                        + attributeExpressionExecutors[1].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L94">            throw new SiddhiAppValidationException(&quot;Parameter value must be a variable but found &quot;</span>
+<span class="nc" id="L95">                    + attributeExpressionExecutors[1].getClass().getCanonicalName());</span>
+        }
+<span class="nc" id="L97">        dataSet = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L98">    }</span>
+
+    @Override
+    public Attribute.Type getReturnType() {
+<span class="nc" id="L102">        return returnType;</span>
+    }
+
+    @Override
+    public Object processAdd(Object o) {
+<span class="nc" id="L107">        return null;  //Since the createMapFromBatch function requires two parameters, this method does not get called.</span>
+        // Hence, not implemented.
+    }
+
+    @Override
+    public Object processAdd(Object[] objects) {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">        for (int i = 0; i &lt; objects.length; i++) {</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">            if (objects[i] == null) {</span>
+<span class="nc" id="L115">                throw new SiddhiAppRuntimeException(String.format(&quot;bny:createMapFromBatch() function requires &quot; +</span>
+<span class="nc" id="L116">                        &quot;not null attribute for index: %s&quot;, i + 1));</span>
+            }
+        }
+<span class="nc" id="L119">        String key = (String) objects[0];</span>
+<span class="nc" id="L120">        String value = (String) objects[1];</span>
+<span class="nc" id="L121">        dataSet.put(key, value);</span>
+<span class="nc" id="L122">        return new HashMap&lt;&gt;(dataSet);</span>
+    }
+
+    @Override
+    public Object processRemove(Object o) {
+<span class="nc" id="L127">        dataSet.remove(o);</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">        if (dataSet.size() == 0) {</span>
+<span class="nc" id="L129">            canDestroy = true;</span>
+        }
+<span class="nc" id="L131">        return dataSet;</span>
+    }
+
+    @Override
+    public Object processRemove(Object[] objects) {
+<span class="nc bnc" id="L136" title="All 2 branches missed.">        for (Object object : objects) {</span>
+<span class="nc" id="L137">            dataSet.remove(object);</span>
+        }
+<span class="nc bnc" id="L139" title="All 2 branches missed.">        if (dataSet.size() == 0) {</span>
+<span class="nc" id="L140">            canDestroy = true;</span>
+        }
+<span class="nc" id="L142">        return dataSet;</span>
+    }
+
+    @Override
+    public boolean canDestroy() {
+
+<span class="nc" id="L148">        return canDestroy;</span>
+    }
+
+    @Override
+    public Object reset() {
+<span class="nc" id="L153">        dataSet.clear();</span>
+<span class="nc" id="L154">        canDestroy = true;</span>
+<span class="nc" id="L155">        return &quot;&quot;;</span>
+    }
+
+    @Override
+    public Map&lt;String, Object&gt; currentState() {
+<span class="nc" id="L160">        HashMap&lt;String, Object&gt; state = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L161">        state.put(&quot;dataSet&quot;, dataSet);</span>
+<span class="nc" id="L162">        return state;</span>
+    }
+
+    @Override
+    public void restoreState(Map&lt;String, Object&gt; state) {
+<span class="nc" id="L167">        dataSet = (Map&lt;String, String&gt;) state.get(&quot;dataSet&quot;);</span>
+<span class="nc" id="L168">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.7.8.201612092310</span></div></body></html>

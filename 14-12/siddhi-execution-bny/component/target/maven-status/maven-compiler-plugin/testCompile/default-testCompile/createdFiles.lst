@@ -1,0 +1,6 @@
+org/wso2/extension/siddhi/execution/bny/aggregate/TestCaseOfBNYAggregateFunction.class
+org/wso2/extension/siddhi/execution/bny/streamprocessor/TestCaseOfBNYStreamProcessor.class
+org/wso2/extension/siddhi/execution/bny/window/TestCaseOfBNYWindow.class
+org/wso2/extension/siddhi/execution/bny/function/TestCaseOfBNYFunction.class
+org/wso2/extension/siddhi/execution/bny/streamprocessor/TestCaseOfBNYStreamProcessor$1.class
+org/wso2/extension/siddhi/execution/bny/streamfunction/TestCaseOfBNYStreamFunction.class

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PopulateFromMap.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Siddhi execution of BNY</a> &gt; <a href="index.source.html" class="el_package">org.wso2.extension.siddhi.execution.bny.util</a> &gt; <span class="el_source">PopulateFromMap.java</span></div><h1>PopulateFromMap.java</h1><pre class="source lang-java linenums">package org.wso2.extension.siddhi.execution.bny.util;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ *Util methods for the bny extensions
+ */
+<span class="nc" id="L9">public class PopulateFromMap {</span>
+    private static final String ALL_PLACEHOLDERS_REGEX = &quot;\\$\\*.*?\\^&quot;;
+    private static final String PLACEHOLDER_START_CHARACTERS = &quot;\\$\\*&quot;;
+    private static final String PLACEHOLDER_END_CHARACTERS = &quot;\\^&quot;;
+    private static final String ESCAPE_CHARACTER = &quot;$&quot;;
+    private static final String REPLACE_STR = &quot;&quot;;
+
+    public static String populateTemplateFromMap(Map propertiesMap, String template) {
+<span class="nc" id="L17">        HashMap&lt;String, String&gt; map = (HashMap&lt;String, String&gt;) propertiesMap;</span>
+<span class="nc bnc" id="L18" title="All 2 branches missed.">        for (Map.Entry&lt;String, String&gt; entry : map.entrySet()) {</span>
+<span class="nc" id="L19">            String regex = PLACEHOLDER_START_CHARACTERS.concat(entry.getKey()).concat(PLACEHOLDER_END_CHARACTERS);</span>
+<span class="nc" id="L20">            String val = entry.getValue();</span>
+<span class="nc bnc" id="L21" title="All 2 branches missed.">            if (val.contains(ESCAPE_CHARACTER)) {</span>
+<span class="nc" id="L22">                val = &quot;\\&quot;.concat(val);</span>
+            }
+<span class="nc" id="L24">            template = template.replaceAll(regex, val);</span>
+<span class="nc" id="L25">        }</span>
+<span class="nc" id="L26">        template = template.replaceAll(ALL_PLACEHOLDERS_REGEX, REPLACE_STR);</span>
+<span class="nc" id="L27">        return template;</span>
+    }
+
+    public static String populateTemplateFromMap(Map propertiesMap, String template, String startRegx, String endRegx) {
+<span class="nc" id="L31">        HashMap&lt;String, String&gt; map = (HashMap&lt;String, String&gt;) propertiesMap;</span>
+<span class="nc bnc" id="L32" title="All 2 branches missed.">        for (Map.Entry&lt;String, String&gt; entry : map.entrySet()) {</span>
+<span class="nc" id="L33">            String regex = startRegx.concat(entry.getKey()).concat(endRegx);</span>
+<span class="nc" id="L34">            String val = entry.getValue();</span>
+<span class="nc bnc" id="L35" title="All 2 branches missed.">            if (val.contains(ESCAPE_CHARACTER)) {</span>
+<span class="nc" id="L36">                val = &quot;\\&quot;.concat(val);</span>
+            }
+<span class="nc" id="L38">            template = template.replaceAll(regex, val);</span>
+<span class="nc" id="L39">        }</span>
+<span class="nc" id="L40">        return template;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.7.8.201612092310</span></div></body></html>

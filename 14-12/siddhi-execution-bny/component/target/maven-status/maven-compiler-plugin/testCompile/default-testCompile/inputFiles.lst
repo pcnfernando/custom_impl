@@ -1,0 +1,5 @@
+/home/chiran/Desktop/BNY_ARTIFACTS/siddhi-execution-bny/component/src/test/java/org/wso2/extension/siddhi/execution/bny/streamfunction/TestCaseOfBNYStreamFunction.java
+/home/chiran/Desktop/BNY_ARTIFACTS/siddhi-execution-bny/component/src/test/java/org/wso2/extension/siddhi/execution/bny/window/TestCaseOfBNYWindow.java
+/home/chiran/Desktop/BNY_ARTIFACTS/siddhi-execution-bny/component/src/test/java/org/wso2/extension/siddhi/execution/bny/aggregate/TestCaseOfBNYAggregateFunction.java
+/home/chiran/Desktop/BNY_ARTIFACTS/siddhi-execution-bny/component/src/test/java/org/wso2/extension/siddhi/execution/bny/function/TestCaseOfBNYFunction.java
+/home/chiran/Desktop/BNY_ARTIFACTS/siddhi-execution-bny/component/src/test/java/org/wso2/extension/siddhi/execution/bny/streamprocessor/TestCaseOfBNYStreamProcessor.java

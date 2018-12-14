@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CreateMapFromReferenceFunctionExtension.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Siddhi execution of BNY</a> &gt; <a href="index.source.html" class="el_package">org.wso2.extension.siddhi.execution.bny.streamfunction</a> &gt; <span class="el_source">CreateMapFromReferenceFunctionExtension.java</span></div><h1>CreateMapFromReferenceFunctionExtension.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (c)  2018, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the &quot;License&quot;); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package org.wso2.extension.siddhi.execution.bny.streamfunction;
+
+import org.wso2.extension.siddhi.execution.bny.util.PopulateFromMap;
+import org.wso2.siddhi.annotation.Example;
+import org.wso2.siddhi.annotation.Extension;
+import org.wso2.siddhi.annotation.Parameter;
+import org.wso2.siddhi.annotation.ReturnAttribute;
+import org.wso2.siddhi.annotation.util.DataType;
+import org.wso2.siddhi.core.config.SiddhiAppContext;
+import org.wso2.siddhi.core.exception.SiddhiAppRuntimeException;
+import org.wso2.siddhi.core.executor.ExpressionExecutor;
+import org.wso2.siddhi.core.executor.VariableExpressionExecutor;
+import org.wso2.siddhi.core.executor.function.FunctionExecutor;
+import org.wso2.siddhi.core.util.config.ConfigReader;
+import org.wso2.siddhi.query.api.definition.Attribute;
+import org.wso2.siddhi.query.api.exception.SiddhiAppValidationException;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * createMapFromRef(propertiesMap,SUBTOPIC, SUBTOPIC1, SUBTOPIC2, SUBTOPIC3, SUBTOPIC4, RULE_FLAG, EMAIL_FLAG,
+ * ALR_PRI_ID, ALR_DESC_TX, ALR_TY_DESC_TX)
+ * Returns a map with populated references from MQMSGRECNAMESPACE table.
+ * Accept Type(s): (OBJECT, STRING, STRING, STRING, STRING, STRING, STRING, STRING, STRING, STRING, STRING)
+ * Return Type(s): OBJECT
+ */
+@Extension(
+        name = &quot;createMapFromRef&quot;,
+        namespace = &quot;bny&quot;,
+        description = &quot;Returns a map with populated values for references from the raw event. &quot;,
+        parameters = {
+                @Parameter(name = &quot;structured.message.map&quot;,
+                        description = &quot;The initial property map created from the raw message.&quot;,
+                        type = {DataType.OBJECT}),
+                @Parameter(name = &quot;references.list&quot;,
+                        description = &quot;List of references from the MQMSGRECNAMESPACE for the alert message type.&quot;,
+                        type = {DataType.STRING}),
+        },
+        returnAttributes = @ReturnAttribute(
+                description = &quot;This returns a map with populated values for the references &quot;
+                        + &quot;from MQMSGRECNAMESPACE table.&quot;,
+                type = {DataType.OBJECT}),
+        examples = @Example(description = &quot;This returns a hash map by adding values for the keys referenced by &quot;
+                + &quot;the references.list&quot;,
+                syntax = &quot;bny:createMapFromRef(propertiesMap,SUBTOPIC, SUBTOPIC1, SUBTOPIC2, SUBTOPIC3, SUBTOPIC4, &quot;
+                        + &quot;RULE_FLAG, EMAIL_FLAG,ALR_PRI_ID, ALR_DESC_TX, ALR_TY_DESC_TX)&quot;)
+)
+<span class="nc" id="L68">public class CreateMapFromReferenceFunctionExtension extends FunctionExecutor {</span>
+
+<span class="nc" id="L70">    Attribute.Type returnType = Attribute.Type.OBJECT;</span>
+<span class="nc" id="L71">    List&lt;String&gt; attrList = new ArrayList&lt;&gt;();</span>
+
+    @Override
+    protected void init(ExpressionExecutor[] attributeExpressionExecutors, ConfigReader configReader,
+                        SiddhiAppContext siddhiAppContext) {
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        for (int i = 1; i &lt; attributeExpressionExecutors.length; i++) {</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">            if (attributeExpressionExecutors[i] != null) {</span>
+<span class="nc" id="L78">                attrList.add(((VariableExpressionExecutor) attributeExpressionExecutors[i]).getAttribute().getName());</span>
+            } else {
+<span class="nc" id="L80">                throw new SiddhiAppValidationException(String.format(&quot;CreateMapFromReferenceFunctionExtension &quot;</span>
+<span class="nc" id="L81">                        + &quot;%s parameter needs to be non empty&quot;, i));</span>
+            }
+        }
+<span class="nc" id="L84">    }</span>
+
+    @Override
+    protected Object execute(Object[] data) {
+<span class="nc bnc" id="L88" title="All 2 branches missed.">        for (int i = 0; i &lt; data.length; i++) {</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">            if (data[i] == null) {</span>
+<span class="nc" id="L90">                throw new SiddhiAppRuntimeException(String.format(&quot;Invalid input given to str:createMapFromRef() &quot;</span>
+<span class="nc" id="L91">                        + &quot;function. %s argument cannot be null&quot;, (i + 1)));</span>
+            }
+        }
+<span class="nc" id="L94">        Map&lt;String, String&gt; propertiesMap = (LinkedHashMap&lt;String, String&gt;) data[0];</span>
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        for (int i = 1; i &lt; attributeExpressionExecutors.length; i++) {</span>
+<span class="nc" id="L96">            String attribute = attrList.get(i - 1);</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">            if (propertiesMap.get(data[i]) == null) {</span>
+<span class="nc" id="L98">                propertiesMap.put(attribute, (String) data[i]);</span>
+            } else {
+<span class="nc" id="L100">                propertiesMap.put(attribute, propertiesMap.get(data[i]));</span>
+            }
+        }
+<span class="nc" id="L103">        String alertDesc = PopulateFromMap.populateTemplateFromMap(propertiesMap,</span>
+<span class="nc" id="L104">                propertiesMap.get(&quot;ALR_DESC_TX&quot;), &quot;\\+&quot;, &quot;\\+&quot;);</span>
+<span class="nc" id="L105">        String alertTypeDesc = PopulateFromMap.populateTemplateFromMap(propertiesMap,</span>
+<span class="nc" id="L106">                propertiesMap.get(&quot;ALR_TY_DESC_TX&quot;), &quot;\\+&quot;, &quot;\\+&quot;);</span>
+<span class="nc" id="L107">        propertiesMap.replace(&quot;ALR_DESC_TX&quot;, alertDesc);</span>
+<span class="nc" id="L108">        propertiesMap.replace(&quot;ALR_TY_DESC_TX&quot;, alertTypeDesc);</span>
+<span class="nc" id="L109">        return propertiesMap;</span>
+    }
+
+    @Override
+    protected Object execute(Object data) {
+<span class="nc" id="L114">        return null;  //Since the CreateMapFromReference function takes in exactly 2 parameters,</span>
+        // this method does not get called.
+        // Hence, not implemented.
+    }
+
+    @Override
+    public Attribute.Type getReturnType() {
+<span class="nc" id="L121">        return returnType;</span>
+    }
+
+    @Override
+    public Map&lt;String, Object&gt; currentState() {
+<span class="nc" id="L126">        return null;    //No need to maintain a state.</span>
+    }
+
+    @Override
+    public void restoreState(Map&lt;String, Object&gt; map) {
+<span class="nc" id="L131">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.7.8.201612092310</span></div></body></html>

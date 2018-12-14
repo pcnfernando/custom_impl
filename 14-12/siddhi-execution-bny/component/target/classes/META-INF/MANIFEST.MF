@@ -1,0 +1,61 @@
+Manifest-Version: 1.0
+Bnd-LastModified: 1543516723770
+Build-Jdk: 1.8.0_191
+Built-By: chiran
+Bundle-Contributors: WSO2 Inc
+Bundle-Copyright: WSO2 Inc
+Bundle-Description: WSO2 is an open source application development softw
+ are company focused on providing service-orientedarchitecture solutions
+  for professional developers.
+Bundle-Developers: WSO2 Inc
+Bundle-DocURL: https://docs.wso2.com
+Bundle-License: http://www.apache.org/licenses/LICENSE-2.0.txt
+Bundle-ManifestVersion: 2
+Bundle-Name: siddhi-execution-bny
+Bundle-SymbolicName: siddhi-execution-bny
+Bundle-Vendor: WSO2 Inc
+Bundle-Version: 1.0.4
+Created-By: Apache Maven Bundle Plugin
+DynamicImport-Package: *
+Export-Package: org.wso2.extension.siddhi.execution.bny.aggregate;uses:=
+ "org.wso2.siddhi.annotation,org.wso2.siddhi.annotation.util,org.wso2.si
+ ddhi.core.config,org.wso2.siddhi.core.executor,org.wso2.siddhi.core.que
+ ry.selector.attribute.aggregator,org.wso2.siddhi.core.util.config,org.w
+ so2.siddhi.query.api.definition";version="1.0.4",org.wso2.extension.sid
+ dhi.execution.bny.bean;version="1.0.4",org.wso2.extension.siddhi.execut
+ ion.bny.streamfunction;uses:="org.wso2.siddhi.annotation,org.wso2.siddh
+ i.annotation.util,org.wso2.siddhi.core.config,org.wso2.siddhi.core.exec
+ utor,org.wso2.siddhi.core.executor.function,org.wso2.siddhi.core.util.c
+ onfig,org.wso2.siddhi.query.api.definition";version="1.0.4",org.wso2.ex
+ tension.siddhi.execution.bny.streamprocessor;uses:="org.wso2.siddhi.ann
+ otation,org.wso2.siddhi.annotation.util,org.wso2.siddhi.core.config,org
+ .wso2.siddhi.core.event,org.wso2.siddhi.core.event.stream,org.wso2.sidd
+ hi.core.event.stream.populater,org.wso2.siddhi.core.executor,org.wso2.s
+ iddhi.core.query.processor,org.wso2.siddhi.core.query.processor.stream,
+ org.wso2.siddhi.core.util.config,org.wso2.siddhi.query.api.definition";
+ version="1.0.4",org.wso2.extension.siddhi.execution.bny.util;version="1
+ .0.4",org.wso2.extension.siddhi.execution.bny;version="1.0.4"
+Import-Package: javax.script;resolution:=optional,org.apache.log4j;resol
+ ution:=optional;version="[1.2,2)",org.json;resolution:=optional;version
+ ="[2.0,3)",org.slf4j;resolution:=optional;version="[1.7,2)",org.wso2.ex
+ tension.siddhi.execution.bny.bean;resolution:=optional,org.wso2.extensi
+ on.siddhi.execution.bny.util;resolution:=optional,org.wso2.siddhi.annot
+ ation;resolution:=optional;version="[4.1,5)",org.wso2.siddhi.annotation
+ .util;resolution:=optional;version="[4.1,5)",org.wso2.siddhi.core.confi
+ g;resolution:=optional;version="[4.1,5)",org.wso2.siddhi.core.event;res
+ olution:=optional;version="[4.1,5)",org.wso2.siddhi.core.event.stream;r
+ esolution:=optional;version="[4.1,5)",org.wso2.siddhi.core.event.stream
+ .populater;resolution:=optional;version="[4.1,5)",org.wso2.siddhi.core.
+ exception;resolution:=optional;version="[4.1,5)",org.wso2.siddhi.core.e
+ xecutor;resolution:=optional;version="[4.1,5)",org.wso2.siddhi.core.exe
+ cutor.function;resolution:=optional;version="[4.1,5)",org.wso2.siddhi.c
+ ore.query.processor;resolution:=optional;version="[4.1,5)",org.wso2.sid
+ dhi.core.query.processor.stream;resolution:=optional;version="[4.1,5)",
+ org.wso2.siddhi.core.query.selector.attribute.aggregator;resolution:=op
+ tional;version="[4.1,5)",org.wso2.siddhi.core.util.config;resolution:=o
+ ptional;version="[4.1,5)",org.wso2.siddhi.query.api.definition;resoluti
+ on:=optional;version="[4.1,5)",org.wso2.siddhi.query.api.exception;reso
+ lution:=optional;version="[4.1,5)"
+Require-Capability: osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.8))"
+SCM-Revision: 2018-11-29T18:38:27Z
+Tool: Bnd-3.0.0.201509101326

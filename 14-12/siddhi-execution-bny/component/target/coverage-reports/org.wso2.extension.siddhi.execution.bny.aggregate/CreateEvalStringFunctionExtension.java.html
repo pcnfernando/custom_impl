@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CreateEvalStringFunctionExtension.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Siddhi execution of BNY</a> &gt; <a href="index.source.html" class="el_package">org.wso2.extension.siddhi.execution.bny.aggregate</a> &gt; <span class="el_source">CreateEvalStringFunctionExtension.java</span></div><h1>CreateEvalStringFunctionExtension.java</h1><pre class="source lang-java linenums">/*
+ * Copyright (c) 2018, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ *
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the &quot;License&quot;); you may not use this file except
+ * in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package org.wso2.extension.siddhi.execution.bny.aggregate;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.wso2.extension.siddhi.execution.bny.bean.Expression;
+import org.wso2.siddhi.annotation.Example;
+import org.wso2.siddhi.annotation.Extension;
+import org.wso2.siddhi.annotation.Parameter;
+import org.wso2.siddhi.annotation.ReturnAttribute;
+import org.wso2.siddhi.annotation.util.DataType;
+import org.wso2.siddhi.core.config.SiddhiAppContext;
+import org.wso2.siddhi.core.exception.SiddhiAppRuntimeException;
+import org.wso2.siddhi.core.executor.ExpressionExecutor;
+import org.wso2.siddhi.core.executor.VariableExpressionExecutor;
+import org.wso2.siddhi.core.query.selector.attribute.aggregator.AttributeAggregator;
+import org.wso2.siddhi.core.util.config.ConfigReader;
+import org.wso2.siddhi.query.api.definition.Attribute;
+import org.wso2.siddhi.query.api.exception.SiddhiAppValidationException;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
+/**
+ * createEvalStr(PROPERTY_MAPPING, STRUCTURED_PROPERTY_MAP, RULE_MSTR_ID, VARL_NM, VARL_TY_CD, VARL_OPER_CD,
+ * VARL_VAL_TX ,OPER_CD , RULE_SEQ_NR)
+ * Returns a logical expression string. 'true/false' flag is a flag to whether populate the
+ * Variables in the expression.
+ * Accept Type(s): OBJECT. Attribute Mappings.
+ * Accept Type(s): OBJECT. Properties map created from the Raw message.
+ * Accept Type(s): STRING. RULE_MSTR_ID.
+ * Accept Type(s): STRING. VARL_NM.
+ * Accept Type(s): STRING. VARL_TY_CD
+ * Accept Type(s): STRING. VARL_OPER_CD.
+ * Accept Type(s): STRING. VARL_VAL_TX
+ * Accept Type(s): STRING. OPER_CD
+ * Accept Type(s): INTEGER. RULE_SEQ_NR
+ * Return Type(s): OBJECT
+ */
+@Extension(
+        name = &quot;createEvalStr&quot;,
+        namespace = &quot;bny&quot;,
+        description = &quot;Creates a map with populated and unpopulated logical expression strings from &quot;
+                + &quot;each of the provided expressions per RuleID.&quot;,
+        parameters = {
+                @Parameter(name = &quot;attribute.mapping&quot;,
+                        description = &quot;The attribute mappings needed when populating the logical expressions. &quot;
+                                + &quot;Expects a map.&quot;,
+                        type = {DataType.OBJECT}),
+                @Parameter(name = &quot;structured.properties&quot;,
+                        description = &quot;The Parameter Map which contains the key,value pairs extracted &quot;
+                                + &quot;from the raw message.&quot;,
+                        type = {DataType.OBJECT}),
+                @Parameter(name = &quot;rule.master.id&quot;,
+                        description = &quot;The Rule Master ID of each expression. When we group by RULE_MSTR_ID, &quot;
+                                + &quot;the RULE_MSTR_ID will be the same within a single event chunk.&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;varl.nm&quot;,
+                        description = &quot;Attribute referencing the data within the message. The structured.properties &quot;
+                                + &quot;should contain this parameter as the key, if not logical string will not be &quot;
+                                + &quot;correctly populated.&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;varl.ty.cd&quot;,
+                        description = &quot;Attribute type of varl.nm&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;varl.oper.cd&quot;,
+                        description = &quot;Inequalities of the expression. eg: GE, LE, EQ, NOT&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;varl.val.tx&quot;,
+                        description = &quot;Static parameter customer configured while creating the rule. &quot;
+                                + &quot;eg: Price &gt; 200, RHS of the expression.&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;oper.cd&quot;,
+                        description = &quot;The logical operation used to combine the expression &quot;
+                                + &quot;to create the logical statement.&quot;,
+                        type = {DataType.STRING}),
+                @Parameter(name = &quot;rule.seq.nr&quot;,
+                        description = &quot;Expression order number for a given rule.master.id. This parameter is used &quot;
+                                + &quot;to sort out the expression while create the logical statement &quot;
+                                + &quot;from multiple expressions.&quot;,
+                        type = {DataType.INT}),
+
+        },
+        returnAttributes = @ReturnAttribute(
+                description = &quot;Returns a map with populated and unpopulated logical statements. 'populated' key holds &quot;
+                        + &quot;the logical statement with rules populated from the data from the message where as &quot;
+                        + &quot;'unpopulated' key holds the unpopulated logical statement.&quot;,
+                type = {DataType.OBJECT}),
+        examples = {
+                @Example(description = &quot;This returns a map with populated and unpopulated logical statements created &quot;
+                        + &quot;from the provided expression list as the output.&quot;,
+                        syntax = &quot;from TempStream1#rdbms:query('EAF_DEV_DB', RDBMS_QUERY, &quot;
+                                + &quot;'RULE_MSTR_ID string, VARL_NM string,VARL_OPER_CD string,VARL_VAL_TX string,&quot;
+                                + &quot;OPER_CD string, VARL_TY_CD string, RULE_SEQ_NR int')\n&quot;
+                                + &quot;#window.batch()\n&quot;
+                                + &quot;select bny:createEvalStr(PROPERTY_MAPPING, STRUCTURED_PROPERTY_MAP, RULE_MSTR_ID, &quot;
+                                + &quot;VARL_NM, VARL_TY_CD, VARL_OPER_CD ,VARL_VAL_TX ,OPER_CD , RULE_SEQ_NR) &quot;
+                                + &quot;as EVAL_STRING_MAP\n&quot;
+                                + &quot;group by RULE_MSTR_ID\n&quot;
+                                + &quot;insert into  TempStream2;&quot;)
+        }
+)
+<span class="nc" id="L124">public class CreateEvalStringFunctionExtension extends AttributeAggregator {</span>
+
+<span class="nc" id="L126">    private static final Logger LOG = LoggerFactory.getLogger(CreateEvalStringFunctionExtension.class);</span>
+    private static final String SKIP_CHARACTER_FIELD_NAME = &quot;SKIPOVER&quot;;
+<span class="nc" id="L128">    private Attribute.Type returnType = Attribute.Type.STRING;</span>
+<span class="nc" id="L129">    private boolean canDestroy = false;</span>
+<span class="nc" id="L130">    private List&lt;Expression&gt; expressionList = new ArrayList&lt;&gt;();</span>
+
+    @Override
+    protected void init(ExpressionExecutor[] attributeExpressionExecutors, ConfigReader configReader,
+                        SiddhiAppContext siddhiAppContext) {
+
+<span class="nc" id="L136">        int maxParameterCount = 9;</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">        if (attributeExpressionExecutors.length != maxParameterCount) {</span>
+<span class="nc" id="L138">            throw new SiddhiAppValidationException(&quot;Invalid number of parameters provided for createEvalStr extension. &quot;</span>
+                    + &quot;The extension requires exactly &quot; + maxParameterCount + &quot; parameters but found &quot;
+                    + attributeExpressionExecutors.length);
+        }
+<span class="nc bnc" id="L142" title="All 2 branches missed.">        if (attributeExpressionExecutors[0] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">            if (attributeExpressionExecutors[0].getReturnType() != Attribute.Type.OBJECT) {</span>
+<span class="nc" id="L144">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the attribute.mapping &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.OBJECT + &quot; but found &quot;
+<span class="nc" id="L146">                        + attributeExpressionExecutors[0].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L149">            throw new SiddhiAppValidationException(&quot;Parameter attribute.mapping must be a variable but found &quot;</span>
+<span class="nc" id="L150">                    + attributeExpressionExecutors[0].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L152" title="All 2 branches missed.">        if (attributeExpressionExecutors[1] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">            if (attributeExpressionExecutors[1].getReturnType() != Attribute.Type.OBJECT) {</span>
+<span class="nc" id="L154">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the structured.properties &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.OBJECT + &quot; but found &quot;
+<span class="nc" id="L156">                        + attributeExpressionExecutors[1].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L159">            throw new SiddhiAppValidationException(&quot;Parameter structured.properties must be a variable but found &quot;</span>
+<span class="nc" id="L160">                    + attributeExpressionExecutors[1].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L162" title="All 2 branches missed.">        if (attributeExpressionExecutors[2] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">            if (attributeExpressionExecutors[2].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L164">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the RULE_MSTR_ID &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L166">                        + attributeExpressionExecutors[2].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L169">            throw new SiddhiAppValidationException(&quot;Parameter RULE_MSTR_ID must be a variable but found &quot;</span>
+<span class="nc" id="L170">                    + attributeExpressionExecutors[2].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L172" title="All 2 branches missed.">        if (attributeExpressionExecutors[3] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">            if (attributeExpressionExecutors[3].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L174">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the VARL_NM &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L176">                        + attributeExpressionExecutors[3].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L179">            throw new SiddhiAppValidationException(&quot;Parameter VARL_NM must be a variable but found &quot;</span>
+<span class="nc" id="L180">                    + attributeExpressionExecutors[3].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L182" title="All 2 branches missed.">        if (attributeExpressionExecutors[4] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">            if (attributeExpressionExecutors[4].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L184">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the VARL_TY_CD &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L186">                        + attributeExpressionExecutors[4].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L189">            throw new SiddhiAppValidationException(&quot;Parameter VARL_TY_CD must be a variable but found &quot;</span>
+<span class="nc" id="L190">                    + attributeExpressionExecutors[4].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L192" title="All 2 branches missed.">        if (attributeExpressionExecutors[5] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L193" title="All 2 branches missed.">            if (attributeExpressionExecutors[5].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L194">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the VARL_OPER_CD &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L196">                        + attributeExpressionExecutors[5].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L199">            throw new SiddhiAppValidationException(&quot;Parameter VARL_OPER_CD must be a variable but found &quot;</span>
+<span class="nc" id="L200">                    + attributeExpressionExecutors[5].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L202" title="All 2 branches missed.">        if (attributeExpressionExecutors[6] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">            if (attributeExpressionExecutors[6].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L204">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the VARL_VAL_TX &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L206">                        + attributeExpressionExecutors[6].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L209">            throw new SiddhiAppValidationException(&quot;Parameter VARL_VAL_TX must be a variable but found &quot;</span>
+<span class="nc" id="L210">                    + attributeExpressionExecutors[6].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L212" title="All 2 branches missed.">        if (attributeExpressionExecutors[7] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">            if (attributeExpressionExecutors[7].getReturnType() != Attribute.Type.STRING) {</span>
+<span class="nc" id="L214">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the OPER_CD &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.STRING + &quot; but found &quot;
+<span class="nc" id="L216">                        + attributeExpressionExecutors[7].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L219">            throw new SiddhiAppValidationException(&quot;Parameter OPER_CD must be a variable but found &quot;</span>
+<span class="nc" id="L220">                    + attributeExpressionExecutors[7].getClass().getCanonicalName());</span>
+        }
+<span class="nc bnc" id="L222" title="All 2 branches missed.">        if (attributeExpressionExecutors[8] instanceof VariableExpressionExecutor) {</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">            if (attributeExpressionExecutors[8].getReturnType() != Attribute.Type.INT) {</span>
+<span class="nc" id="L224">                throw new SiddhiAppValidationException(&quot;Invalid parameter type found for the RULE_SEQ_NR &quot;</span>
+                        + &quot;argument,&quot; + &quot; required &quot; + Attribute.Type.INT + &quot; but found &quot;
+<span class="nc" id="L226">                        + attributeExpressionExecutors[8].getReturnType().toString());</span>
+            }
+        } else {
+<span class="nc" id="L229">            throw new SiddhiAppValidationException(&quot;Parameter RULE_SEQ_NR must be a variable but found &quot;</span>
+<span class="nc" id="L230">                    + attributeExpressionExecutors[8].getClass().getCanonicalName());</span>
+        }
+<span class="nc" id="L232">    }</span>
+
+    @Override
+    public Attribute.Type getReturnType() {
+
+<span class="nc" id="L237">        return returnType;</span>
+    }
+
+    @Override
+    public Object processAdd(Object o) {
+
+<span class="nc" id="L243">        return null;  //Since the extractValues function takes in exactly 2 parameters, this method does not get called.</span>
+        // Hence, not implemented.
+    }
+
+    @Override
+    public Object processAdd(Object[] objects) {
+
+<span class="nc" id="L250">        Map&lt;String, String&gt; structuredPropertiesMap = new TreeMap&lt;&gt;(String.CASE_INSENSITIVE_ORDER);</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">        for (int i = 0; i &lt; objects.length; i++) {</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">            if (objects[i] == null) {</span>
+<span class="nc" id="L253">                throw new SiddhiAppRuntimeException(String.format(&quot;Invalid input given to str:createEvalStr() &quot; +</span>
+<span class="nc" id="L254">                        &quot;function. %s argument cannot be null&quot;, (i + 1)));</span>
+            }
+        }
+<span class="nc" id="L257">        Map&lt;String, String&gt; ruleAttributeMapping = (HashMap&lt;String, String&gt;) objects[0];</span>
+<span class="nc" id="L258">        Map&lt;String, String&gt; property = (LinkedHashMap&lt;String, String&gt;) objects[1];</span>
+<span class="nc" id="L259">        property.forEach(structuredPropertiesMap::putIfAbsent);</span>
+<span class="nc" id="L260">        Expression expression = new Expression((String) objects[2], (String) objects[3],</span>
+                (String) objects[4], (String) objects[5], (String) objects[6],
+<span class="nc" id="L262">                (String) objects[7], (int) objects[8]);</span>
+<span class="nc" id="L263">        expressionList.add(expression);</span>
+<span class="nc" id="L264">        return constructConcatString(structuredPropertiesMap, ruleAttributeMapping);</span>
+    }
+
+    private String parseInEqualities(Map&lt;String, String&gt; structuredPropertiesMap,
+                                     Map&lt;String, String&gt; ruleAttributeMapping,
+                                     Expression expression) {
+
+        Object valueFromMessage;
+<span class="nc" id="L272">        valueFromMessage = structuredPropertiesMap.get(expression.getVarlNm());</span>
+<span class="nc bnc" id="L273" title="All 2 branches missed.">        if (valueFromMessage == null) {</span>
+<span class="nc" id="L274">            String mapping = ruleAttributeMapping.get(expression.getVarlNm().toUpperCase());</span>
+<span class="nc bnc" id="L275" title="All 2 branches missed.">            if (mapping != null) {</span>
+<span class="nc" id="L276">                valueFromMessage = structuredPropertiesMap.get(mapping);</span>
+            }
+<span class="nc bnc" id="L278" title="All 2 branches missed.">            if (valueFromMessage == null ||</span>
+<span class="nc bnc" id="L279" title="All 2 branches missed.">                    (!(expression.getVarlNm().equalsIgnoreCase(SKIP_CHARACTER_FIELD_NAME))</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">                            &amp;&amp; ((String) valueFromMessage).trim().isEmpty())) {</span>
+<span class="nc" id="L281">                LOG.error(String.format(&quot;Key %s returns a null while parsing expression, &quot;,</span>
+<span class="nc" id="L282">                        expression.getVarlNm(), expression.toString()));</span>
+<span class="nc" id="L283">                valueFromMessage = &quot;$&quot;.concat(expression.getVarlNm());</span>
+            }
+        }
+<span class="nc" id="L286">        String attributeType = expression.getVarlTyCd();</span>
+<span class="nc" id="L287">        String configuredRuleVal = expression.getVarlValTx();</span>
+<span class="nc bnc" id="L288" title="All 2 branches missed.">        if (&quot;EQ&quot;.equalsIgnoreCase(expression.getVarlOperCd())) {</span>
+<span class="nc" id="L289">            return generateExpress(valueFromMessage, attributeType, &quot;==&quot;, configuredRuleVal);</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">        } else if (&quot;GT&quot;.equalsIgnoreCase(expression.getVarlOperCd())) {</span>
+<span class="nc" id="L291">            return generateExpress(valueFromMessage, attributeType, &quot;&gt;&quot;, configuredRuleVal);</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">        } else if (&quot;GE&quot;.equalsIgnoreCase(expression.getVarlOperCd())) {</span>
+<span class="nc" id="L293">            return generateExpress(valueFromMessage, attributeType, &quot;&gt;=&quot;, configuredRuleVal);</span>
+<span class="nc bnc" id="L294" title="All 2 branches missed.">        } else if (&quot;LT&quot;.equalsIgnoreCase(expression.getVarlOperCd())) {</span>
+<span class="nc" id="L295">            return generateExpress(valueFromMessage, attributeType, &quot;&lt;&quot;, configuredRuleVal);</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">        } else if (&quot;LE&quot;.equalsIgnoreCase(expression.getVarlOperCd())) {</span>
+<span class="nc" id="L297">            return generateExpress(valueFromMessage, attributeType, &quot;&lt;=&quot;, configuredRuleVal);</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">        } else if (&quot;NOT&quot;.equalsIgnoreCase(expression.getVarlOperCd())) {</span>
+<span class="nc" id="L299">            return generateExpress(valueFromMessage, attributeType, &quot;!&quot;, configuredRuleVal);</span>
+        } else {
+<span class="nc" id="L301">            LOG.error(&quot;Invalid inequality found while creating logical expression:&quot; + expression.getVarlOperCd());</span>
+<span class="nc" id="L302">            return generateExpress(valueFromMessage, attributeType, &quot;|INVALID_INEQUALITY:|&quot;</span>
+<span class="nc" id="L303">                    + expression.getVarlOperCd(), configuredRuleVal);</span>
+        }
+    }
+
+    private String generateExpress(Object valueFromMessage, String attributeType, String ops,
+                                   Object configuredRuleVal) {
+
+<span class="nc" id="L310">        StringBuilder build = new StringBuilder(&quot;(&quot;);</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">        if (&quot;NUMBER&quot;.equalsIgnoreCase(attributeType)) {</span>
+<span class="nc" id="L312">            build.append(valueFromMessage).append(&quot; &quot;).append(ops).append(&quot; &quot;).append(configuredRuleVal);</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">        } else if (&quot;STRING&quot;.equalsIgnoreCase(attributeType)) {</span>
+<span class="nc" id="L314">            String upperCaseMapValue = ((String) valueFromMessage).toUpperCase();</span>
+<span class="nc" id="L315">            build.append(&quot;\&quot;&quot;).append(upperCaseMapValue).append(&quot;\&quot; &quot;).append(ops).append(&quot; &quot;).append(&quot;\&quot;&quot;)</span>
+<span class="nc" id="L316">                    .append(((String) configuredRuleVal).toUpperCase()).append(&quot;\&quot;&quot;);</span>
+<span class="nc" id="L317">        } else {</span>
+<span class="nc" id="L318">            LOG.error(String.format(&quot;Invalid VARL_TY_CD:%s found while creating the logical expression %s %s %s&quot;</span>
+                    , attributeType, valueFromMessage, ops, configuredRuleVal));
+<span class="nc" id="L320">            return build.append(&quot;&quot;).toString();</span>
+        }
+<span class="nc" id="L322">        return build.append(&quot;)&quot;).toString();</span>
+    }
+
+    private Object constructConcatString(Map structuredPropertiesMap, Map ruleAttributeMapping) {
+
+<span class="nc" id="L327">        StringBuilder populateStringBuilder = new StringBuilder();</span>
+<span class="nc" id="L328">        Collections.sort(expressionList);</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">        for (Expression expression : expressionList) {</span>
+<span class="nc" id="L330">            populateStringBuilder.append(parseInEqualities(structuredPropertiesMap,</span>
+                    ruleAttributeMapping, expression));
+<span class="nc" id="L332">            populateStringBuilder.append(parseLogicalOperators(expression));</span>
+<span class="nc" id="L333">        }</span>
+<span class="nc" id="L334">        return populateStringBuilder.toString();</span>
+    }
+
+    private String parseLogicalOperators(Expression expression) {
+
+<span class="nc bnc" id="L339" title="All 2 branches missed.">        if (&quot;AND&quot;.equalsIgnoreCase(expression.getOperCd())) {</span>
+<span class="nc" id="L340">            return &quot; &amp;&amp; &quot;;</span>
+<span class="nc bnc" id="L341" title="All 2 branches missed.">        } else if (&quot;OR&quot;.equalsIgnoreCase(expression.getOperCd())) {</span>
+<span class="nc" id="L342">            return &quot; || &quot;;</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">        } else if (&quot;END&quot;.equalsIgnoreCase(expression.getOperCd())) {</span>
+<span class="nc" id="L344">            return &quot;&quot;;</span>
+        } else {
+<span class="nc" id="L346">            LOG.error(String.format(&quot;Invalid OPER_CD:%s found while joining multiple expressions: %s %s %s&quot;</span>
+<span class="nc" id="L347">                    , expression.getOperCd(), expression.getVarlNm(), expression.getVarlOperCd(),</span>
+<span class="nc" id="L348">                    expression.getVarlValTx()));</span>
+<span class="nc" id="L349">            throw new SiddhiAppRuntimeException(String.format(&quot;Invalid OPER_CD:%s found while joining &quot;</span>
+<span class="nc" id="L350">                            + &quot;multiple expressions: %s %s %s&quot;, expression.getOperCd(), expression.getVarlNm(),</span>
+<span class="nc" id="L351">                    expression.getVarlOperCd(), expression.getVarlValTx()));</span>
+        }
+    }
+
+    @Override
+    public Object processRemove(Object o) {
+
+<span class="nc" id="L358">        return null;</span>
+    }
+
+    @Override
+    public Object processRemove(Object[] objects) {
+<span class="nc" id="L363">        Expression expression = new Expression((String) objects[2], (String) objects[3],</span>
+                (String) objects[4], (String) objects[5], (String) objects[6],
+<span class="nc" id="L365">                (String) objects[7], Integer.parseInt((String) objects[8]));</span>
+<span class="nc" id="L366">        expressionList.remove(expression);</span>
+<span class="nc bnc" id="L367" title="All 2 branches missed.">        if (expressionList.size() == 0) {</span>
+<span class="nc" id="L368">            canDestroy = true;</span>
+        }
+<span class="nc" id="L370">        return &quot;&quot;;</span>
+    }
+
+    @Override
+    public boolean canDestroy() {
+
+<span class="nc" id="L376">        return canDestroy;</span>
+    }
+
+    @Override
+    public Object reset() {
+
+<span class="nc" id="L382">        expressionList.clear();</span>
+<span class="nc" id="L383">        canDestroy = true;</span>
+<span class="nc" id="L384">        return &quot;&quot;;</span>
+    }
+
+    @Override
+    public Map&lt;String, Object&gt; currentState() {
+
+<span class="nc" id="L390">        HashMap&lt;String, Object&gt; state = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L391">        state.put(&quot;expressionList&quot;, expressionList);</span>
+<span class="nc" id="L392">        return state;</span>
+    }
+
+    @Override
+    public void restoreState(Map&lt;String, Object&gt; state) {
+<span class="nc" id="L397">        expressionList = (List&lt;Expression&gt;) state.get(&quot;expressionList&quot;);</span>
+<span class="nc" id="L398">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.7.8.201612092310</span></div></body></html>

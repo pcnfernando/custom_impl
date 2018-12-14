@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EvaluateStreamProcessor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Siddhi execution of BNY</a> &gt; <a href="index.source.html" class="el_package">org.wso2.extension.siddhi.execution.bny.streamprocessor</a> &gt; <span class="el_source">EvaluateStreamProcessor.java</span></div><h1>EvaluateStreamProcessor.java</h1><pre class="source lang-java linenums">package org.wso2.extension.siddhi.execution.bny.streamprocessor;
+
+import org.apache.log4j.Logger;
+import org.wso2.extension.siddhi.execution.bny.util.RegexUtil;
+import org.wso2.siddhi.annotation.Example;
+import org.wso2.siddhi.annotation.Extension;
+import org.wso2.siddhi.annotation.Parameter;
+import org.wso2.siddhi.annotation.ReturnAttribute;
+import org.wso2.siddhi.annotation.util.DataType;
+import org.wso2.siddhi.core.config.SiddhiAppContext;
+import org.wso2.siddhi.core.event.ComplexEventChunk;
+import org.wso2.siddhi.core.event.stream.StreamEvent;
+import org.wso2.siddhi.core.event.stream.StreamEventCloner;
+import org.wso2.siddhi.core.event.stream.populater.ComplexEventPopulater;
+import org.wso2.siddhi.core.executor.ExpressionExecutor;
+import org.wso2.siddhi.core.query.processor.Processor;
+import org.wso2.siddhi.core.query.processor.stream.StreamProcessor;
+import org.wso2.siddhi.core.util.config.ConfigReader;
+import org.wso2.siddhi.query.api.definition.AbstractDefinition;
+import org.wso2.siddhi.query.api.definition.Attribute;
+import org.wso2.siddhi.query.api.exception.SiddhiAppValidationException;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+
+/**
+ * eval(POPULATED_EVAL_STR, NOTPOPULATED_EVAL_STR)
+ * Returns the evaluation result and the matched condition.
+ * Accept Type(s): (STRING, STRING)
+ * Return Type(s): (STRING, STRING)
+ */
+@Extension(
+        name = &quot;eval&quot;,
+        namespace = &quot;bny&quot;,
+        description = &quot;Returns a string that is the result of concatenating two or more input string values.&quot;,
+        parameters = {
+                @Parameter(name = &quot;exp&quot;,
+                        description = &quot;It can have two or more `string` type input parameters.&quot;,
+                        type = {DataType.STRING})
+        },
+        returnAttributes = {
+                @ReturnAttribute(name = &quot;evalResult&quot;,
+                        description = &quot;The predicted value (`true/false`)&quot;,
+                        type = {DataType.BOOL}),
+                @ReturnAttribute(name = &quot;matchedCondition&quot;,
+                        description = &quot;The probability of the prediction&quot;,
+                        type = {DataType.STRING})
+        },
+        examples = @Example(description = &quot;This returns a boolean value as evalResult by evaluating the passed &quot;
+                + &quot;'POPULATED_EVAL_STR' and the matchedCondition. In this case, it will return true as the evalResult &quot;
+                + &quot;and \&quot;Amount &gt; 5\&quot; as the matchedCondition&quot;,
+                syntax = &quot;bny:eval(\&quot;10 &gt; 5\&quot;, \&quot;Amount &gt; 5\&quot;)&quot;)
+)
+<span class="fc" id="L58">public class EvaluateStreamProcessor extends StreamProcessor {</span>
+
+<span class="fc" id="L60">    private static final Logger log = Logger.getLogger(EvaluateStreamProcessor.class);</span>
+    private static final String ENGINE_NAME = &quot;nashorn&quot;;
+    private static final String OPERATOR_REGEX = &quot;[&lt;&gt;=]+&quot;;
+    private static final String LOGICAL_CONJUNCTION_REGEX = &quot;\\|\\||\\&amp;\\&amp;&quot;;
+    private static final String NON_ALPHA_NUMERIC_REGEX = &quot;[^A-Za-z0-9.]&quot;;
+    private static final String RULE_THRESHHOLD_CONSTANT = &quot;RULETHRESHOLD&quot;;
+    private static final String RULE_OPERATOR_CONSTANT = &quot;RULEOPERATOR&quot;;
+    private ScriptEngine engine;
+<span class="fc" id="L68">    private final Object mutex = new Object();</span>
+
+    @Override
+    protected List&lt;Attribute&gt; init(AbstractDefinition abstractDefinition, ExpressionExecutor[] expressionExecutors,
+                                   ConfigReader configReader, SiddhiAppContext siddhiAppContext) {
+
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">        if (attributeExpressionExecutors.length == 1) {</span>
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">            if (attributeExpressionExecutors[0] == null) {</span>
+<span class="nc" id="L76">                throw new SiddhiAppValidationException(&quot;bny:eval 1st parameter, logical expression needs &quot; +</span>
+                        &quot;to be non empty&quot;);
+            }
+        } else {
+<span class="nc" id="L80">            throw new SiddhiAppValidationException(&quot;bny:eval should only have one parameter but found &quot;</span>
+                    + attributeExpressionExecutors.length + &quot; input attributes&quot;);
+        }
+<span class="fc" id="L83">        engine = new ScriptEngineManager().getEngineByName(ENGINE_NAME);</span>
+<span class="fc" id="L84">        List&lt;Attribute&gt; attributes = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L85">        attributes.add(new Attribute(&quot;evalResult&quot;, Attribute.Type.BOOL));</span>
+<span class="fc" id="L86">        attributes.add(new Attribute(&quot;matchedConditionMap&quot;, Attribute.Type.OBJECT));</span>
+<span class="fc" id="L87">        return attributes;</span>
+    }
+
+    @Override
+    protected void process(ComplexEventChunk&lt;StreamEvent&gt; streamEventChunk, Processor processor,
+                           StreamEventCloner streamEventCloner, ComplexEventPopulater complexEventPopulater) {
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        while (streamEventChunk.hasNext()) {</span>
+<span class="fc" id="L94">            String expression = &quot;&quot;;</span>
+<span class="fc" id="L95">            StreamEvent event = streamEventChunk.next();</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">            if (attributeExpressionExecutors[0].execute(event) != null) {</span>
+<span class="fc" id="L97">                expression = (String) attributeExpressionExecutors[0].execute(event);</span>
+            }
+<span class="fc" id="L99">            boolean evalResult = execute(expression);</span>
+<span class="fc" id="L100">            Map&lt;String, String&gt; ruleMap = new HashMap&lt;&gt;();</span>
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">            if (evalResult) {</span>
+<span class="fc" id="L102">                String[] tokens = expression.split(LOGICAL_CONJUNCTION_REGEX);</span>
+<span class="fc bfc" id="L103" title="All 2 branches covered.">                for (int i = 0; i &lt; tokens.length; i++) {</span>
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">                    if (execute(tokens[i])) {</span>
+<span class="fc" id="L105">                        String operatorKey = RULE_OPERATOR_CONSTANT.concat(String.valueOf(i + 1));</span>
+<span class="fc" id="L106">                        String ruleKey = RULE_THRESHHOLD_CONSTANT.concat(String.valueOf(i + 1));</span>
+<span class="fc" id="L107">                        String operator = RegexUtil.runRegex(OPERATOR_REGEX, tokens[i], 0);</span>
+<span class="fc" id="L108">                        String rhs = &quot;&quot;;</span>
+<span class="fc" id="L109">                        String[] operands = tokens[i].split(OPERATOR_REGEX);</span>
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">                        if (operands.length == 2) {</span>
+<span class="fc" id="L111">                            rhs = operands[1].replaceAll(NON_ALPHA_NUMERIC_REGEX, &quot;&quot;);</span>
+                        }
+<span class="fc" id="L113">                        ruleMap.put(operatorKey, operator);</span>
+<span class="fc" id="L114">                        ruleMap.put(ruleKey, rhs);</span>
+                    }
+                }
+            }
+<span class="fc" id="L118">            Object[] out = {evalResult, ruleMap};</span>
+            // If output has values, then add those values to output stream
+<span class="fc" id="L120">            complexEventPopulater.populateComplexEvent(event, out);</span>
+<span class="fc" id="L121">        }</span>
+<span class="fc" id="L122">        nextProcessor.process(streamEventChunk);</span>
+<span class="fc" id="L123">    }</span>
+
+    private boolean execute(String expression) {
+
+<span class="pc bpc" id="L127" title="1 of 2 branches missed.">        if (log.isDebugEnabled()) {</span>
+<span class="nc" id="L128">            log.debug(&quot;Executing expression &quot; + expression);</span>
+        }
+<span class="fc" id="L130">        Object bool = false;</span>
+        try {
+<span class="pc bpc" id="L132" title="1 of 2 branches missed.">            if (engine != null) {</span>
+<span class="pc bpc" id="L133" title="3 of 4 branches missed.">                if (expression != null || !(expression.isEmpty())) {</span>
+<span class="fc" id="L134">                    synchronized (mutex) {</span>
+<span class="fc" id="L135">                        bool = engine.eval(expression);</span>
+<span class="pc" id="L136">                    }</span>
+<span class="pc bpc" id="L137" title="1 of 2 branches missed.">                    if (log.isDebugEnabled()) {</span>
+<span class="nc" id="L138">                        log.debug(&quot;Result for the expression('&quot; + expression + &quot;') : &quot; + bool);</span>
+                    }
+                } else {
+<span class="nc" id="L141">                    log.error(&quot;Expression is null or empty&quot;);</span>
+                }
+            } else {
+<span class="nc" id="L144">                log.error(&quot;Rule Engine is null.&quot;);</span>
+            }
+
+<span class="fc" id="L147">            return (boolean) bool;</span>
+<span class="nc" id="L148">        } catch (Exception e) {</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">            if (log.isDebugEnabled()) {</span>
+<span class="nc" id="L150">                log.error(&quot;Error occurred evaluating expression, &quot; + expression, e);</span>
+            }
+<span class="nc" id="L152">            log.error(&quot;Error occurred evaluating expression, &quot; + expression);</span>
+<span class="nc" id="L153">            return false;</span>
+        }
+    }
+
+    /**
+     * Used to collect the serializable state of the processing element, that need to be
+     * persisted for reconstructing the element to the same state on a different point of time
+     *
+     * @return stateful objects of the processing element as an map
+     */
+    @Override
+    public Map&lt;String, Object&gt; currentState() {
+
+<span class="nc" id="L166">        return new HashMap&lt;&gt;();</span>
+    }
+
+    /**
+     * Used to restore serialized state of the processing element, for reconstructing
+     * the element to the same state as if was on a previous point of time.
+     *
+     * @param state the stateful objects of the processing element as a map.
+     *              This is the same map that is created upon calling currentState() method.
+     */
+    @Override
+    public void restoreState(Map&lt;String, Object&gt; state) {
+
+<span class="nc" id="L179">    }</span>
+
+    @Override
+    public void start() {
+
+<span class="fc" id="L184">    }</span>
+
+    @Override
+    public void stop() {
+
+<span class="fc" id="L189">    }</span>
+
+    public static void main(String[] args) {
+
+<span class="nc" id="L193">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.7.8.201612092310</span></div></body></html>
